@@ -1,13 +1,44 @@
 {
   "name": "@itspawansaini/envvault",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "description": "End-to-end encrypted .env sync for developers and small teams.",
+  "keywords": [
+    "env",
+    "dotenv",
+    "secrets",
+    "secret-management",
+    "configuration",
+    "encryption",
+    "cli",
+    "developer-tools",
+    "environment-variables"
+  ],
+  "license": "MIT",
+  "author": {
+    "name": "Pawan Saini",
+    "email": "itspawansaini@gmail.com",
+    "url": "https://www.itspawansaini.com"
+  },
+  "homepage": "https://github.com/itsmepawansaini/envvault#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/itsmepawansaini/envvault.git",
+    "directory": "apps/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/itsmepawansaini/envvault/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
   "bin": {
     "envvault": "dist/index.cjs"
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "publishConfig": {
     "access": "public"

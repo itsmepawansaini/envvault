@@ -7,7 +7,7 @@ const cliPath = resolve(import.meta.dirname, '../dist/index.cjs');
 
 test('published CLI artifact is executable', () => {
   const version = execFileSync(process.execPath, [cliPath, '--version'], { encoding: 'utf8' }).trim();
-  assert.equal(version, '0.1.0');
+  assert.equal(version, '0.1.1');
 });
 
 test('published CLI exposes required MVP commands', () => {
