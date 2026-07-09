@@ -1,0 +1,29 @@
+{
+  "name": "@itspawansaini/envvault",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "envvault": "dist/index.cjs"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "build": "esbuild src/index.js --bundle --platform=node --format=cjs --target=node20 --outfile=dist/index.cjs",
+    "check": "node --check src/index.js",
+    "test": "npm run build && node --test src/index.test.js",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@envvault/crypto-core": "file:../../packages/crypto-core",
+    "chalk": "^5.4.1",
+    "commander": "^12.1.0",
+    "esbuild": "^0.25.0",
+    "prompts": "^2.4.2"
+  }
+}

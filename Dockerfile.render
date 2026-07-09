@@ -1,0 +1,33 @@
+FROM node:20-alpine AS build
+
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/cli/package.json apps/cli/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY packages/crypto-core/package.json packages/crypto-core/package.json
+RUN npm ci
+
+COPY apps/web apps/web
+COPY packages/crypto-core packages/crypto-core
+ENV VITE_API_BASE=/api
+RUN npm run build --workspace @envvault/web
+
+FROM node:20-alpine AS runtime
+
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY package.json package-lock.json ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/cli/package.json apps/cli/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY packages/crypto-core/package.json packages/crypto-core/package.json
+RUN npm ci --omit=dev
+
+COPY apps/api apps/api
+COPY --from=build /app/apps/web/dist apps/web/dist
+
+USER node
+EXPOSE 10000
+CMD ["npm", "run", "start", "--workspace", "@envvault/api"]

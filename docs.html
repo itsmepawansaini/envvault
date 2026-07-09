@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EnvVault — Engineering Documentation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #0B0F17;
+    --surface: #111726;
+    --surface-2: #161D2E;
+    --border: #232B3D;
+    --text: #E7EBF3;
+    --text-dim: #8A93A6;
+    --text-faint: #545E73;
+    --accent: #6C8CFF;
+    --accent-dim: #384874;
+    --teal: #35D0BA;
+    --amber: #F2B155;
+    --red: #F2685C;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Inter', sans-serif;
+    --display: 'Sora', sans-serif;
+    --radius: 10px;
+    --sidebar-w: 292px;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html{ scroll-behavior:smooth; }
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--sans);
+    font-size:15px;
+    line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{ color:inherit; text-decoration:none; }
+
+  .shell{ display:flex; min-height:100vh; }
+
+  .sidebar{
+    width:var(--sidebar-w);
+    flex-shrink:0;
+    background:var(--surface);
+    border-right:1px solid var(--border);
+    position:fixed;
+    top:0; left:0; bottom:0;
+    overflow-y:auto;
+    z-index:40;
+    transition:transform .25s ease;
+  }
+  .sidebar::-webkit-scrollbar{ width:8px; }
+  .sidebar::-webkit-scrollbar-thumb{ background:var(--border); border-radius:8px; }
+
+  .brand{
+    display:flex; align-items:center; gap:10px;
+    padding:22px 22px 18px;
+    border-bottom:1px solid var(--border);
+  }
+  .brand-mark{
+    width:30px; height:30px; border-radius:8px;
+    background:linear-gradient(135deg, var(--accent), var(--teal));
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--mono); font-weight:700; font-size:14px; color:#0B0F17;
+    flex-shrink:0;
+  }
+  .brand-text{ font-family:var(--display); font-weight:700; font-size:16.5px; letter-spacing:-.01em; }
+  .brand-sub{ font-family:var(--mono); font-size:10.5px; color:var(--text-faint); margin-top:1px; }
+
+  .nav-scope{ padding:16px 12px 60px; }
+  .nav-group{ margin-bottom:4px; }
+  .nav-group-label{
+    font-family:var(--mono);
+    font-size:10.5px;
+    letter-spacing:.06em;
+    color:var(--text-faint);
+    padding:14px 10px 6px;
+    text-transform:uppercase;
+  }
+  .nav-link{
+    display:flex; align-items:center; gap:8px;
+    padding:7px 10px;
+    border-radius:7px;
+    font-size:13.5px;
+    color:var(--text-dim);
+    font-family:var(--mono);
+    line-height:1.4;
+    transition:background .12s ease, color .12s ease;
+  }
+  .nav-link:hover{ background:var(--surface-2); color:var(--text); }
+  .nav-link.active{ background:rgba(108,140,255,0.12); color:var(--accent); }
+  .nav-link .dot{ width:5px; height:5px; border-radius:50%; background:var(--text-faint); flex-shrink:0; }
+  .nav-link.active .dot{ background:var(--accent); }
+
+  .sidebar-toggle{
+    display:none;
+    position:fixed; top:16px; left:16px; z-index:60;
+    width:38px; height:38px; border-radius:8px;
+    background:var(--surface-2); border:1px solid var(--border);
+    color:var(--text); align-items:center; justify-content:center;
+    cursor:pointer;
+  }
+
+  .main{
+    margin-left:var(--sidebar-w);
+    flex:1;
+    min-width:0;
+    padding:56px 64px 120px;
+    max-width:900px;
+  }
+
+  .doc-header{ margin-bottom:44px; }
+  .doc-eyebrow{
+    font-family:var(--mono); font-size:12px; color:var(--teal);
+    letter-spacing:.08em; text-transform:uppercase; margin-bottom:14px;
+    display:flex; align-items:center; gap:8px;
+  }
+  .doc-eyebrow::before{ content:"//"; color:var(--text-faint); }
+  h1.doc-title{
+    font-family:var(--display); font-weight:800; font-size:40px;
+    letter-spacing:-0.02em; line-height:1.15; margin-bottom:14px;
+  }
+  .doc-lede{ font-size:17px; color:var(--text-dim); max-width:640px; }
+
+  section.block{ margin-bottom:64px; scroll-margin-top:32px; }
+  section.block h2{
+    font-family:var(--display); font-weight:700; font-size:24px;
+    letter-spacing:-.01em; margin-bottom:6px;
+    padding-top:6px;
+    display:flex; align-items:baseline; gap:12px;
+  }
+  section.block h2 .num{ font-family:var(--mono); font-size:14px; color:var(--accent); font-weight:500; }
+  section.block .sec-sub{ color:var(--text-faint); font-size:13.5px; margin-bottom:22px; font-family:var(--mono); }
+
+  h3{ font-family:var(--display); font-size:17.5px; font-weight:600; margin:28px 0 10px; letter-spacing:-.005em; }
+  h4{ font-family:var(--sans); font-size:14.5px; font-weight:700; margin:20px 0 8px; color:var(--text); }
+
+  p{ margin-bottom:14px; color:#D3D9E5; }
+  p.dim{ color:var(--text-dim); }
+  strong{ color:#fff; font-weight:600; }
+
+  ul, ol{ margin:0 0 16px 22px; color:#D3D9E5; }
+  li{ margin-bottom:6px; }
+  li::marker{ color:var(--accent); }
+
+  code.inline{
+    font-family:var(--mono); font-size:13px; background:var(--surface-2);
+    border:1px solid var(--border); padding:1px 6px; border-radius:5px; color:var(--teal);
+  }
+
+  .code-window{
+    background:#0D1220; border:1px solid var(--border); border-radius:var(--radius);
+    margin:16px 0 22px; overflow:hidden;
+  }
+  .code-window .chrome{
+    display:flex; align-items:center; gap:6px;
+    padding:9px 12px; background:var(--surface-2); border-bottom:1px solid var(--border);
+  }
+  .code-window .chrome span{ width:9px; height:9px; border-radius:50%; }
+  .code-window .chrome span:nth-child(1){ background:#F2685C; }
+  .code-window .chrome span:nth-child(2){ background:#F2B155; }
+  .code-window .chrome span:nth-child(3){ background:#35D0BA; }
+  .code-window .chrome .label{ margin-left:8px; font-family:var(--mono); font-size:11.5px; color:var(--text-faint); }
+  .code-window pre{
+    padding:16px 18px; overflow-x:auto; font-family:var(--mono); font-size:13px; line-height:1.6; color:#CBE3FF;
+  }
+  .code-window pre .cmt{ color:var(--text-faint); }
+  .code-window pre .str{ color:var(--teal); }
+  .code-window pre .kw{ color:var(--accent); }
+
+  table{ width:100%; border-collapse:collapse; margin:16px 0 24px; font-size:13.5px; }
+  th, td{ text-align:left; padding:10px 12px; border-bottom:1px solid var(--border); vertical-align:top; }
+  th{ font-family:var(--mono); font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-faint); background:var(--surface); }
+  td{ color:#D3D9E5; }
+  tr:last-child td{ border-bottom:none; }
+  td code.inline{ white-space:nowrap; }
+
+  .callout{
+    border-radius:var(--radius); padding:16px 18px; margin:18px 0 24px;
+    border:1px solid var(--border); background:var(--surface);
+    display:flex; gap:12px;
+  }
+  .callout .icon{ font-family:var(--mono); font-weight:700; flex-shrink:0; }
+  .callout.win{ border-color:rgba(53,208,186,.35); background:rgba(53,208,186,.06); }
+  .callout.win .icon{ color:var(--teal); }
+  .callout.security{ border-color:rgba(108,140,255,.35); background:rgba(108,140,255,.06); }
+  .callout.security .icon{ color:var(--accent); }
+  .callout.warn{ border-color:rgba(242,177,85,.35); background:rgba(242,177,85,.06); }
+  .callout.warn .icon{ color:var(--amber); }
+  .callout p{ margin:0; color:#D3D9E5; font-size:14px; }
+
+  .method{
+    font-family:var(--mono); font-size:11px; font-weight:700; padding:3px 8px; border-radius:5px;
+    letter-spacing:.03em;
+  }
+  .method.get{ background:rgba(53,208,186,.15); color:var(--teal); }
+  .method.post{ background:rgba(108,140,255,.15); color:var(--accent); }
+  .method.patch{ background:rgba(242,177,85,.15); color:var(--amber); }
+  .method.delete{ background:rgba(242,104,92,.15); color:var(--red); }
+
+  .endpoint{
+    display:flex; align-items:center; gap:10px; margin:20px 0 4px;
+    font-family:var(--mono); font-size:13.5px; flex-wrap:wrap;
+  }
+  .endpoint .path{ color:var(--text); }
+  .endpoint-desc{ color:var(--text-dim); font-size:13.5px; margin-bottom:10px; }
+
+  .grid-2{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:16px 0 24px; }
+  @media (max-width:760px){ .grid-2{ grid-template-columns:1fr; } }
+  .card{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; }
+  .card h4{ margin-top:0; color:var(--text); }
+  .card p{ font-size:13.5px; color:var(--text-dim); margin-bottom:0; }
+
+  .compare-table td.no{ color:var(--red); }
+  .compare-table td.partial{ color:var(--amber); }
+  .compare-table td.yes{ color:var(--teal); }
+
+  .enh-card{
+    border:1px solid var(--border); background:var(--surface); border-radius:var(--radius);
+    padding:22px 24px; margin:18px 0; position:relative;
+  }
+  .enh-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:10px; }
+  .enh-title{ font-family:var(--display); font-weight:700; font-size:17px; letter-spacing:-.005em; display:flex; align-items:center; gap:10px; }
+  .enh-title .enh-icon{ font-family:var(--mono); font-size:13px; width:26px; height:26px; border-radius:7px; background:var(--surface-2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .phase-badge{
+    font-family:var(--mono); font-size:10.5px; font-weight:600; letter-spacing:.04em;
+    padding:3px 9px; border-radius:20px; white-space:nowrap; text-transform:uppercase;
+  }
+  .phase-badge.p2{ background:rgba(53,208,186,.14); color:var(--teal); border:1px solid rgba(53,208,186,.3); }
+  .phase-badge.p3{ background:rgba(108,140,255,.14); color:var(--accent); border:1px solid rgba(108,140,255,.3); }
+  .phase-badge.p4{ background:rgba(242,177,85,.14); color:var(--amber); border:1px solid rgba(242,177,85,.3); }
+  .enh-sub{ margin-bottom:14px; }
+  .enh-grid{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; }
+  @media (max-width:760px){ .enh-grid{ grid-template-columns:1fr; } }
+  .enh-col{ background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:12px 14px; }
+  .enh-col .enh-label{ font-family:var(--mono); font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--text-faint); margin-bottom:6px; }
+  .enh-col p{ font-size:13px; color:#D3D9E5; margin-bottom:0; }
+
+  .flow{
+    font-family:var(--mono); font-size:13.5px; background:var(--surface);
+    border:1px solid var(--border); border-radius:var(--radius); padding:18px 22px; margin:16px 0 24px;
+    color:#D3D9E5; line-height:2;
+  }
+  .flow .arrow{ color:var(--text-faint); }
+  .flow .step{ color:var(--text); }
+
+  footer.doc-footer{
+    border-top:1px solid var(--border); margin-top:60px; padding-top:24px;
+    color:var(--text-faint); font-size:12.5px; font-family:var(--mono);
+  }
+
+  @media (max-width:960px){
+    .sidebar{ transform:translateX(-100%); box-shadow:0 0 40px rgba(0,0,0,.5); }
+    .sidebar.open{ transform:translateX(0); }
+    .main{ margin-left:0; padding:80px 22px 100px; }
+    .sidebar-toggle{ display:flex; }
+    h1.doc-title{ font-size:30px; }
+  }
+</style>
+</head>
+<body>
+
+<button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle navigation">☰</button>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-mark">EV</div>
+      <div>
+        <div class="brand-text">EnvVault</div>
+        <div class="brand-sub">engineering spec · v1.0</div>
+      </div>
+    </div>
+    <nav class="nav-scope">
+      <div class="nav-group">
+        <div class="nav-group-label">Start here</div>
+        <a class="nav-link" href="#overview"><span class="dot"></span>01_overview.md</a>
+        <a class="nav-link" href="#positioning"><span class="dot"></span>02_why-we-win.md</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label">Architecture</div>
+        <a class="nav-link" href="#stack"><span class="dot"></span>03_tech-stack.md</a>
+        <a class="nav-link" href="#data-model"><span class="dot"></span>04_data-model.md</a>
+        <a class="nav-link" href="#security"><span class="dot"></span>05_security.md</a>
+        <a class="nav-link" href="#auth"><span class="dot"></span>06_auth.md</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label">Build spec</div>
+        <a class="nav-link" href="#modules"><span class="dot"></span>07_modules.md</a>
+        <a class="nav-link" href="#api"><span class="dot"></span>08_api-reference.md</a>
+        <a class="nav-link" href="#cli"><span class="dot"></span>09_cli-spec.md</a>
+        <a class="nav-link" href="#flows"><span class="dot"></span>10_user-flows.md</a>
+        <a class="nav-link" href="#repo"><span class="dot"></span>11_repo-structure.md</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label">Delivery</div>
+        <a class="nav-link" href="#mvp"><span class="dot"></span>12_mvp-scope.md</a>
+        <a class="nav-link" href="#roadmap"><span class="dot"></span>13_roadmap.md</a>
+        <a class="nav-link" href="#future"><span class="dot"></span>14_future-enhancements.md</a>
+        <a class="nav-link" href="#metrics"><span class="dot"></span>15_success-metrics.md</a>
+      </div>
+    </nav>
+  </aside>
+
+  <main class="main">
+
+    <div class="doc-header">
+      <div class="doc-eyebrow">internal engineering documentation</div>
+      <h1 class="doc-title">EnvVault</h1>
+      <p class="doc-lede">"Git for environment variables." A complete build specification — product scope, architecture, data model, API contract, CLI spec, and security model — written so implementation can start without a kickoff meeting.</p>
+    </div>
+
+    <section class="block" id="overview">
+      <h2><span class="num">01</span> Overview</h2>
+      <p class="sec-sub">the problem, the vision, who this is for</p>
+
+      <h3>The problem</h3>
+      <p>Every codebase depends on secrets — database URLs, API keys, JWT secrets, payment credentials. They live in <code class="inline">.env</code> files kept out of Git via <code class="inline">.gitignore</code>. That protects them from source control, but creates a second, unsolved problem: developers lose local <code class="inline">.env</code> files, teammates share secrets over Slack/WhatsApp, nobody knows which copy is current, and there's no record of who changed what.</p>
+
+      <h3>The vision</h3>
+      <p>EnvVault makes encrypted secret sharing as simple as source control already is — reusing the exact mental model developers already have: <code class="inline">init</code>, <code class="inline">pull</code>, <code class="inline">push</code>. Nothing new to learn. No developer should ever again need to ask <em>"can someone send me the latest .env?"</em></p>
+
+      <h3>Who it's for</h3>
+      <div class="grid-2">
+        <div class="card"><h4>Primary</h4><p>Solo developers, freelancers, 2–20 person startup teams, agencies, open-source maintainers, student teams.</p></div>
+        <div class="card"><h4>Deliberately not</h4><p>Large enterprises with dedicated platform/security teams — that segment is already served (and over-served) by Vault, Infisical Enterprise, and CyberArk.</p></div>
+      </div>
+
+      <h3>Core principles</h3>
+      <ul>
+        <li><strong>Simple</strong> — if it needs a manual, it's already too complex.</li>
+        <li><strong>Secure by default</strong> — encryption is not a toggle, it is the only mode.</li>
+        <li><strong>Git-shaped</strong> — reuse the mental model developers already have.</li>
+        <li><strong>Fast</strong> — first working <code class="inline">pull</code> in under 2 minutes from signup.</li>
+        <li><strong>Browser-safe</strong> — full encryption with no desktop app requirement.</li>
+      </ul>
+    </section>
+
+    <section class="block" id="positioning">
+      <h2><span class="num">02</span> Why We Win</h2>
+      <p class="sec-sub">competitive gap, and the wedge we're building into</p>
+
+      <p>The market has moved toward enterprise feature-bloat, leaving small teams behind. This is the gap EnvVault is built to fill — every decision below traces back to this table.</p>
+
+      <table class="compare-table">
+        <tr><th>Capability</th><th>Doppler</th><th>Infisical</th><th>EnvKey</th><th>EnvVault</th></tr>
+        <tr><td>End-to-end encryption</td><td class="no">No</td><td class="partial">Partial</td><td class="partial">Yes, desktop-app only</td><td class="yes">Yes — in-browser, no install</td></tr>
+        <tr><td>Onboarding without a global CLI install</td><td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="yes"><code class="inline">npx envvault pull</code></td></tr>
+        <tr><td>Environment diff in free tier</td><td class="partial">Limited</td><td class="yes">Yes</td><td class="partial">Limited</td><td class="yes">Yes — shipped in MVP</td></tr>
+        <tr><td>Auth friction</td><td class="no">Email + password flows</td><td class="no">Email + password flows</td><td class="no">Email + password flows</td><td class="yes">OAuth-only, zero password resets</td></tr>
+        <tr><td>Feature surface for a 3-person team</td><td class="partial">Overkill-adjacent</td><td class="no">Overkill (PKI, scanning, agent governance)</td><td class="partial">Moderate</td><td class="yes">Exactly what's needed, nothing else</td></tr>
+      </table>
+
+      <div class="callout win">
+        <div class="icon">→</div>
+        <p><strong>The bet:</strong> stay out of the PKI / secret-rotation / compliance arms race that Infisical and Vault are fighting for enterprise budget. Win the segment that finds all three too heavy. Every module in this spec is scoped against that bet — if a feature request pulls toward "enterprise platform," it's out of scope by design, not by oversight.</p>
+      </div>
+    </section>
+
+    <section class="block" id="stack">
+      <h2><span class="num">03</span> Tech Stack &amp; Architecture</h2>
+      <p class="sec-sub">what we're building with, and how the pieces talk to each other</p>
+
+      <table>
+        <tr><th>Layer</th><th>Technology</th><th>Notes</th></tr>
+        <tr><td>Frontend</td><td>React.js</td><td>Vite build, SPA, Tailwind for UI styling</td></tr>
+        <tr><td>Backend API</td><td>Node.js + Express.js</td><td>REST API, JWT sessions, rate limiting middleware</td></tr>
+        <tr><td>Database</td><td>MongoDB (Atlas)</td><td>Managed cluster; encryption-at-rest enabled at the Atlas layer as defense-in-depth</td></tr>
+        <tr><td>CLI</td><td>Node.js, published to npm</td><td>Runs via global install <em>or</em> <code class="inline">npx</code> — no compiled binary for MVP</td></tr>
+        <tr><td>Encryption</td><td>WebCrypto API (browser) / Node <code class="inline">crypto</code> (CLI)</td><td>AES-256-GCM, always client-side before anything reaches the network</td></tr>
+        <tr><td>Auth</td><td>OAuth 2.0 (GitHub, Google) via Passport.js</td><td>No password storage anywhere in MVP</td></tr>
+        <tr><td>Hosting</td><td>Container host for Node API (Render/Railway/Fly-class); static CDN for React build</td><td>Kept infra-agnostic for MVP</td></tr>
+      </table>
+
+      <h3>Architecture diagram</h3>
+      <div class="code-window">
+        <div class="chrome"><span></span><span></span><span></span><div class="label">architecture.txt</div></div>
+        <pre><span class="cmt">┌─────────────┐        HTTPS/JWT        ┌──────────────────┐
+│  React SPA  │ ──────────────────────▶ │  Express REST API │
+│ (Dashboard) │ ◀────────────────────── │   (Node.js)        │
+└─────────────┘                         └─────────┬─────────┘
+                                                   │
+┌─────────────┐        HTTPS/JWT                  │
+│   CLI (npm) │ ─────────────────────────────────▶│
+│  push/pull  │ ◀─────────────────────────────────┘
+└─────────────┘                                    │
+                                                    ▼
+                                          ┌──────────────────┐
+                                          │  MongoDB Atlas    │
+                                          │ (ciphertext only) │
+                                          └──────────────────┘</span></pre>
+      </div>
+
+      <div class="callout security">
+        <div class="icon">🔒</div>
+        <p><strong>Non-negotiable rule:</strong> Express and MongoDB only ever see and store <strong>ciphertext</strong>. All encryption/decryption happens client-side — in the React app via WebCrypto, and in the CLI via Node's <code class="inline">crypto</code> module — using a per-project key that is itself wrapped per-user and never persisted in plaintext server-side. This is what lets us claim true end-to-end encryption without forcing a desktop app install, unlike EnvKey.</p>
+      </div>
+    </section>
+
+    <section class="block" id="data-model">
+      <h2><span class="num">04</span> Data Model</h2>
+      <p class="sec-sub">MongoDB collections, exact fields, relationships</p>
+
+      <div class="code-window">
+        <div class="chrome"><span></span><span></span><span></span><div class="label">schema.js</div></div>
+        <pre><span class="kw">users</span>
+  _id, oauthProvider, oauthId, email, name, avatarUrl, createdAt
+
+<span class="kw">projects</span>
+  _id, name, ownerId, members: [{ userId, role }], createdAt, archivedAt
+
+<span class="kw">environments</span>
+  _id, projectId, name <span class="cmt">// "development" | "staging" | "production" | custom</span>, createdAt
+
+<span class="kw">variables</span>
+  _id, environmentId, key, encryptedValue, iv, updatedBy, updatedAt
+
+<span class="kw">activityLogs</span>
+  _id, projectId, actorId, action, targetType, targetId, metadata, createdAt
+
+<span class="kw">encryptionKeys</span>
+  _id, projectId, userId, encryptedProjectKey <span class="cmt">// project key wrapped per-user</span></pre>
+      </div>
+
+      <p><code class="inline">variables.encryptedValue</code> is ciphertext only — Express and MongoDB never see or store a plaintext secret at any point in its lifecycle.</p>
+
+      <h3>Indexes required</h3>
+      <ul>
+        <li><code class="inline">projects</code>: index on <code class="inline">ownerId</code>, and on <code class="inline">members.userId</code></li>
+        <li><code class="inline">environments</code>: compound index on <code class="inline">(projectId, name)</code>, unique</li>
+        <li><code class="inline">variables</code>: compound index on <code class="inline">(environmentId, key)</code>, unique</li>
+        <li><code class="inline">activityLogs</code>: index on <code class="inline">(projectId, createdAt desc)</code> for feed pagination</li>
+      </ul>
+    </section>
+
+    <section class="block" id="security">
+      <h2><span class="num">05</span> Security Model</h2>
+      <p class="sec-sub">the encryption design that is our core differentiator — implement exactly as specified</p>
+
+      <h3>Key hierarchy</h3>
+      <ol>
+        <li>On project creation, the client generates a random <strong>project key</strong> (AES-256) — never sent to the server in plaintext.</li>
+        <li>The project key is wrapped ("encrypted") separately for each member using a key derived from that member's session, and stored as <code class="inline">encryptedProjectKey</code> in the <code class="inline">encryptionKeys</code> collection.</li>
+        <li>Every variable value is encrypted client-side with AES-256-GCM using the unwrapped project key, producing <code class="inline">encryptedValue</code> + <code class="inline">iv</code>.</li>
+        <li>When a member is added to a project, the client re-wraps the project key for that new member — the server relays this wrapped blob but cannot read the underlying key.</li>
+      </ol>
+
+      <h3>What the server can and cannot do</h3>
+      <div class="grid-2">
+        <div class="card"><h4>Server can</h4><p>Store ciphertext, route wrapped keys between authorized members, log metadata (who/when/what action), enforce access control on which projects a user can reach.</p></div>
+        <div class="card"><h4>Server cannot</h4><p>Read any secret value in plaintext, at rest or in transit — a full database compromise alone does not expose usable secrets.</p></div>
+      </div>
+
+      <h3>Other required controls</h3>
+      <ul>
+        <li>HTTPS-only transport, HSTS enabled</li>
+        <li>Secrets hidden by default in the UI; "reveal" is an explicit, logged, client-side-only decrypt action</li>
+        <li>Mandatory extra confirmation step before modifying or deleting anything inside a <code class="inline">production</code> environment</li>
+        <li>JWT session tokens with short expiry + refresh rotation</li>
+        <li>Full activity logging for every sensitive action (see <a href="#modules">Activity module</a>)</li>
+        <li>OAuth-only authentication — removes password storage/reset as an attack surface entirely</li>
+      </ul>
+
+      <div class="callout warn">
+        <div class="icon">⚠</div>
+        <p>Do not build any server-side "decrypt for support/debugging" pathway. If it exists, the end-to-end claim is false. If a user loses all their devices and local key material, the correct behavior is guided key re-wrap by remaining project members — not a server-side master key.</p>
+      </div>
+    </section>
+
+    <section class="block" id="auth">
+      <h2><span class="num">06</span> Authentication</h2>
+      <p class="sec-sub">OAuth-only — deliberately no password flows in MVP</p>
+      <p>Login is GitHub or Google OAuth only. There is no password field, no "forgot password" flow, and no password-reset email pipeline to build, maintain, or secure. This removes the single largest source of account-related support tickets and vulnerabilities in comparable products.</p>
+
+      <div class="flow">
+        <span class="step">User clicks "Continue with GitHub"</span> <span class="arrow">→</span><br>
+        <span class="step">OAuth redirect + consent</span> <span class="arrow">→</span><br>
+        <span class="step">Express exchanges code for provider profile</span> <span class="arrow">→</span><br>
+        <span class="step">User record created/matched by oauthId</span> <span class="arrow">→</span><br>
+        <span class="step">JWT session issued, stored in httpOnly cookie</span>
+      </div>
+
+      <p class="dim">CLI auth uses a device-code flow (see <a href="#cli">CLI spec</a>) so a headless terminal session can still authenticate through the same OAuth providers.</p>
+    </section>
+
+    <section class="block" id="modules">
+      <h2><span class="num">07</span> Modules &amp; Features</h2>
+      <p class="sec-sub">every module required for MVP, in build order</p>
+
+      <h3>1. Projects</h3>
+      <p class="endpoint-desc">Top-level container. Holds environments, members, and activity.</p>
+      <p><strong>Features:</strong> create · rename · delete · archive · project dashboard.</p>
+
+      <h3>2. Environments</h3>
+      <p class="endpoint-desc">Behave like Git branches — same command shape, zero new concepts to learn.</p>
+      <p><strong>Features:</strong> create · rename · delete · clone (copy one environment's variables into a new one).</p>
+
+      <h3>3. Variables</h3>
+      <p class="endpoint-desc">Key-value secrets inside an environment, always encrypted client-side.</p>
+      <p><strong>Features:</strong> add · edit · delete · search · copy value · hide/reveal (client-side decrypt only) · bulk import from a dropped <code class="inline">.env</code> file (auto-detects target environment from filename, e.g. <code class="inline">.env.production</code>) · bulk export.</p>
+
+      <h3>4. Environment Comparison <span style="color:var(--teal); font-family:var(--mono); font-size:12px;">— MVP, not post-launch</span></h3>
+      <p class="endpoint-desc">Side-by-side diff between any two environments in a project.</p>
+      <p>Highlights: missing keys · changed values (without revealing plaintext unless explicitly unlocked) · extra/unused variables. This is pulled forward into MVP deliberately — it is the single most-cited daily-value feature developers look for, and a known gap in Doppler's free tier.</p>
+
+      <h3>5. CLI</h3>
+      <p class="endpoint-desc">The primary day-to-day interface — see full spec in <a href="#cli">section 09</a>.</p>
+
+      <h3>6. Team Management</h3>
+      <p class="endpoint-desc">Kept intentionally minimal for MVP.</p>
+      <p><strong>Features:</strong> invite member (by email, resolved to their OAuth account on signup) · remove member · view members · transfer ownership. Granular role-based permissions are explicitly out of scope for MVP — a small team needs "owner" and "member," not a permissions matrix.</p>
+
+      <h3>7. Activity Log</h3>
+      <p class="endpoint-desc">One unified feed per project, not a fragmented multi-screen log.</p>
+      <p><strong>Tracked events:</strong> variable added/updated/deleted · environment created/deleted · member invited/removed · push/pull executed.</p>
+    </section>
+
+    <section class="block" id="api">
+      <h2><span class="num">08</span> API Reference</h2>
+      <p class="sec-sub">REST endpoints — base path <code class="inline">/api</code>, JSON in/out, JWT bearer auth on all routes except OAuth callback</p>
+
+      <h3>Auth</h3>
+      <div class="endpoint"><span class="method post">POST</span><span class="path">/auth/oauth/callback</span></div>
+      <div class="endpoint"><span class="method get">GET</span><span class="path">/auth/me</span></div>
+      <div class="endpoint"><span class="method post">POST</span><span class="path">/auth/logout</span></div>
+
+      <h3>Projects</h3>
+      <div class="endpoint"><span class="method get">GET</span><span class="path">/projects</span></div>
+      <div class="endpoint"><span class="method post">POST</span><span class="path">/projects</span></div>
+      <div class="endpoint"><span class="method get">GET</span><span class="path">/projects/:id</span></div>
+      <div class="endpoint"><span class="method patch">PATCH</span><span class="path">/projects/:id</span></div>
+      <div class="endpoint"><span class="method delete">DELETE</span><span class="path">/projects/:id</span></div>
+      <div class="endpoint"><span class="method post">POST</span><span class="path">/projects/:id/archive</span></div>
+
+      <div class="code-window">
+        <div class="chrome"><span></span><span></span><span></span><div class="label">POST /projects — request/response</div></div>
+        <pre><span class="cmt">// request</span>
+{ <span class="str">"name"</span>: <span class="str">"payments-service"</span> }
+
+<span class="cmt">// response 201</span>
+{
+  <span class="str">"id"</span>: <span class="str">"proj_9f2a"</span>,
+  <span class="str">"name"</span>: <span class="str">"payments-service"</span>,
+  <span class="str">"ownerId"</span>: <span class="str">"usr_3b1c"</span>,
+  <span class="str">"createdAt"</span>: <span class="str">"2026-07-08T10:00:00Z"</span>
+}</pre>
+      </div>
+
+      <h3>Environments</h3>
+      <div class="endpoint"><span class="method get">GET</span><span class="path">/projects/:id/environments</span></div>
+      <div class="endpoint"><span class="method post">POST</span><span class="path">/projects/:id/environments</span></div>
+      <div class="endpoint"><span class="method patch">PATCH</span><span class="path">/environments/:id</span></div>
+      <div class="endpoint"><span class="method delete">DELETE</span><span class="path">/environments/:id</span></div>
+      <div class="endpoint"><span class="method post">POST</span><span class="path">/environments/:id/clone</span></div>
+
+      <h3>Variables</h3>
+      <div class="endpoint"><span class="method get">GET</span><span class="path">/environments/:id/variables</span></div>
+      <div class="endpoint"><span class="method post">POST</span><span class="path">/environments/:id/variables</span></div>
+      <div class="endpoint"><span class="method patch">PATCH</span><span class="path">/variables/:id</span></div>
+      <div class="endpoint"><span class="method delete">DELETE</span><span class="path">/variables/:id</span></div>
+      <div class="endpoint"><span class="method post">POST</span><span class="path">/environments/:id/variables/bulk-import</span></div>
+      <div class="endpoint"><span class="method get">GET</span><span class="path">/environments/:id/variables/export</span></div>
+
+      <div class="code-window">
+        <div class="chrome"><span></span><span></span><span></span><div class="label">POST /environments/:id/variables — request</div></div>
+        <pre>{
+  <span class="str">"key"</span>: <span class="str">"DATABASE_URL"</span>,
+  <span class="str">"encryptedValue"</span>: <span class="str">"a8f3...c91e"</span>, <span class="cmt">// ciphertext, produced client-side</span>
+  <span class="str">"iv"</span>: <span class="str">"4e9b1a..."</span>
+}</pre>
+      </div>
+
+      <h3>Environment Comparison</h3>
+      <div class="endpoint"><span class="method get">GET</span><span class="path">/projects/:id/compare?from=env_dev&to=env_prod</span></div>
+      <p class="endpoint-desc">Returns key-level diff metadata only (which keys are missing/added/changed) — never plaintext values.</p>
+
+      <h3>Team</h3>
+      <div class="endpoint"><span class="method get">GET</span><span class="path">/projects/:id/members</span></div>
+      <div class="endpoint"><span class="method post">POST</span><span class="path">/projects/:id/members</span></div>
+      <div class="endpoint"><span class="method delete">DELETE</span><span class="path">/projects/:id/members/:userId</span></div>
+      <div class="endpoint"><span class="method post">POST</span><span class="path">/projects/:id/transfer-ownership</span></div>
+
+      <h3>Activity</h3>
+      <div class="endpoint"><span class="method get">GET</span><span class="path">/projects/:id/activity</span></div>
+
+      <h3>CLI support endpoints</h3>
+      <div class="endpoint"><span class="method post">POST</span><span class="path">/cli/device-code</span></div>
+      <div class="endpoint"><span class="method post">POST</span><span class="path">/cli/token</span></div>
+      <div class="endpoint"><span class="method get">GET</span><span class="path">/cli/pull?project=:id&env=:name</span></div>
+      <div class="endpoint"><span class="method post">POST</span><span class="path">/cli/push</span></div>
+
+      <h3>Standard error shape</h3>
+      <div class="code-window">
+        <div class="chrome"><span></span><span></span><span></span><div class="label">error.json</div></div>
+        <pre>{
+  <span class="str">"error"</span>: {
+    <span class="str">"code"</span>: <span class="str">"ENV_NOT_FOUND"</span>,
+    <span class="str">"message"</span>: <span class="str">"No environment matches the given id."</span>
+  }
+}</pre>
+      </div>
+      <p>Use consistent HTTP status codes: <code class="inline">400</code> validation, <code class="inline">401</code> unauthenticated, <code class="inline">403</code> unauthorized (valid user, wrong project), <code class="inline">404</code> not found, <code class="inline">409</code> conflict (e.g. duplicate environment name), <code class="inline">500</code> unhandled.</p>
+    </section>
+
+    <section class="block" id="cli">
+      <h2><span class="num">09</span> CLI Specification</h2>
+      <p class="sec-sub">the primary day-to-day developer interface — must work via <code class="inline">npx</code>, no global install required</p>
+
+      <div class="code-window">
+        <div class="chrome"><span></span><span></span><span></span><div class="label">terminal</div></div>
+        <pre><span class="cmt"># authenticate — opens a device-code OAuth flow in the browser</span>
+npx envvault login
+
+<span class="cmt"># link the current folder to a project + environment</span>
+npx envvault init
+
+<span class="cmt"># decrypt remote secrets and write a local .env</span>
+npx envvault pull
+
+<span class="cmt"># diff local vs remote, confirm, encrypt, upload</span>
+npx envvault push
+
+<span class="cmt"># show drift between local .env and remote state</span>
+npx envvault status</pre>
+      </div>
+
+      <h3><code class="inline">envvault push</code> — exact required behavior</h3>
+      <div class="flow">
+        <span class="step">Read local .env</span> <span class="arrow">→</span><br>
+        <span class="step">Detect changes vs. last known remote state</span> <span class="arrow">→</span><br>
+        <span class="step">Print a plain-language diff (+added / ~changed / -removed keys, no values shown for unchanged keys)</span> <span class="arrow">→</span><br>
+        <span class="step">Prompt for confirmation — require a second, explicit confirmation if target environment name is "production"</span> <span class="arrow">→</span><br>
+        <span class="step">Encrypt changed values client-side (AES-256-GCM)</span> <span class="arrow">→</span><br>
+        <span class="step">Upload ciphertext only via POST /cli/push</span>
+      </div>
+
+      <h3>Local config file</h3>
+      <p>Written by <code class="inline">envvault init</code> to <code class="inline">.envvault/config.json</code> (must be added to the project's <code class="inline">.gitignore</code> automatically by the CLI):</p>
+      <div class="code-window">
+        <div class="chrome"><span></span><span></span><span></span><div class="label">.envvault/config.json</div></div>
+        <pre>{
+  <span class="str">"projectId"</span>: <span class="str">"proj_9f2a"</span>,
+  <span class="str">"environment"</span>: <span class="str">"development"</span>,
+  <span class="str">"apiBase"</span>: <span class="str">"https://api.envvault.dev"</span>
+}</pre>
+      </div>
+    </section>
+
+    <section class="block" id="flows">
+      <h2><span class="num">10</span> User Flows</h2>
+      <p class="sec-sub">exact expected paths — implement UI/CLI copy to match these steps</p>
+
+      <h3>First-time setup</h3>
+      <div class="flow">
+        Sign up via GitHub OAuth <span class="arrow">→</span><br>
+        Create a project <span class="arrow">→</span><br>
+        Drop in an existing .env file — auto-creates environment + encrypts variables <span class="arrow">→</span><br>
+        Copy the one-line CLI command shown on screen <span class="arrow">→</span><br>
+        Run it in the project folder — working .env in under 2 minutes total
+      </div>
+
+      <h3>Daily development flow</h3>
+      <div class="flow">
+        <code class="inline">npx envvault pull</code> — get latest secrets <span class="arrow">→</span><br>
+        Develop <span class="arrow">→</span><br>
+        <code class="inline">npx envvault push</code> — see diff, confirm, upload <span class="arrow">→</span><br>
+        Teammates run <code class="inline">pull</code> — everyone in sync, no messages sent
+      </div>
+
+      <h3>New developer onboarding</h3>
+      <div class="flow">
+        Clone the Git repo <span class="arrow">→</span><br>
+        <code class="inline">npx envvault login</code> <span class="arrow">→</span><br>
+        <code class="inline">npx envvault pull</code> <span class="arrow">→</span><br>
+        Run the app — fully configured, zero secrets exchanged manually
+      </div>
+    </section>
+
+    <section class="block" id="repo">
+      <h2><span class="num">11</span> Repository Structure</h2>
+      <p class="sec-sub">suggested monorepo layout</p>
+      <div class="code-window">
+        <div class="chrome"><span></span><span></span><span></span><div class="label">repo tree</div></div>
+        <pre>envvault/
+├── apps/
+│   ├── web/              <span class="cmt"># React dashboard (Vite)</span>
+│   ├── api/               <span class="cmt"># Express REST API</span>
+│   └── cli/               <span class="cmt"># npm-published CLI</span>
+├── packages/
+│   └── crypto-core/       <span class="cmt"># shared AES-256-GCM encrypt/decrypt logic, used by web + cli</span>
+├── .env.example
+└── README.md</pre>
+      </div>
+      <p class="dim"><code class="inline">packages/crypto-core</code> is important: encryption logic must be shared between the web app and the CLI, not reimplemented twice — this is where end-to-end guarantees can silently break if the two diverge.</p>
+    </section>
+
+    <section class="block" id="mvp">
+      <h2><span class="num">12</span> MVP Scope</h2>
+      <p class="sec-sub">what ships in v1 — no negotiation on the "excluded" list without revisiting section 02</p>
+
+      <div class="grid-2">
+        <div class="card">
+          <h4 style="color:var(--teal);">Included</h4>
+          <p>OAuth authentication (GitHub, Google) · Projects (create/rename/delete/archive) · Environments (create/rename/delete/clone) · Variables (add/edit/delete/search/bulk import-export/hide-reveal) · Environment comparison/diff · Client-side end-to-end encryption · CLI (login, init, pull, push, status) via npx · Basic team management (invite/remove/owner transfer) · Unified activity log.</p>
+        </div>
+        <div class="card">
+          <h4 style="color:var(--red);">Excluded from MVP</h4>
+          <p>GitHub Actions/CI integrations · VS Code extension · Secret version rollback/full history · Granular role-based permissions · Secret rotation automation · Public API/SDK for external integrations · Billing/subscriptions · PKI, certificate management, dynamic secrets, agent-credential governance.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" id="roadmap">
+      <h2><span class="num">13</span> Roadmap</h2>
+      <p class="sec-sub">post-MVP phases, in priority order — full explanations for each in <a href="#future" style="color:var(--accent);">section 14</a></p>
+      <table>
+        <tr><th>Phase</th><th>Feature</th><th>Why</th></tr>
+        <tr><td>2</td><td>Version history + rollback</td><td>Natural extension once diff/compare is proven in production</td></tr>
+        <tr><td>2</td><td>VS Code extension</td><td>Meets developers where they already work</td></tr>
+        <tr><td>3</td><td>GitHub Actions / CI integration</td><td>Extends "push once, sync everywhere" to deployments</td></tr>
+        <tr><td>3</td><td>Public API &amp; language SDKs</td><td>Enables programmatic secret injection</td></tr>
+        <tr><td>4</td><td>Role-based permissions</td><td>Only once teams outgrow owner/member</td></tr>
+        <tr><td>4</td><td>Secret rotation scheduling</td><td>For teams graduating toward compliance needs</td></tr>
+        <tr><td>4</td><td>Self-hostable open-core server</td><td>Matches Infisical's trust story, without making it the default path</td></tr>
+      </table>
+    </section>
+
+    <section class="block" id="future">
+      <h2><span class="num">14</span> Future Enhancements</h2>
+      <p class="sec-sub">everything planned beyond MVP — what it is, why it matters competitively, and how it would be built</p>
+
+      <p>None of these ship in v1. They exist here so the team has a shared understanding of where the product goes next, and so MVP decisions (data model, API shapes, crypto design) are made in ways that don't have to be undone later. Each item below lists <strong>what it is</strong>, <strong>why it matters</strong>, and <strong>how it would be implemented</strong>.</p>
+
+      <div class="enh-card">
+        <div class="enh-head">
+          <div class="enh-title"><span class="enh-icon">↺</span> Version History &amp; Rollback</div>
+          <span class="phase-badge p2">Phase 2</span>
+        </div>
+        <p class="enh-sub">Every push to an environment is currently overwrite-only. This turns each environment into a timeline: every push creates an immutable version snapshot, viewable and restorable.</p>
+        <div class="enh-grid">
+          <div class="enh-col"><div class="enh-label">What</div><p>A version list per environment (v1, v2, v3…), each showing which keys changed, who changed them, and when. One click restores any prior version.</p></div>
+          <div class="enh-col"><div class="enh-label">Why</div><p>Someone will eventually push a bad value to production. Right now that's unrecoverable without asking a teammate — this makes it a 10-second self-service fix, and it's the natural next step once diff/compare (already in MVP) is trusted.</p></div>
+          <div class="enh-col"><div class="enh-label">How</div><p>New <code class="inline">versions</code> collection — append-only, one document per push, storing the full encrypted key/value set at that point in time. Restoring re-encrypts nothing; it just re-points the environment's "current" pointer.</p></div>
+        </div>
+      </div>
+
+      <div class="enh-card">
+        <div class="enh-head">
+          <div class="enh-title"><span class="enh-icon">⌘</span> VS Code Extension</div>
+          <span class="phase-badge p2">Phase 2</span>
+        </div>
+        <p class="enh-sub">Pull, push, and browse secrets without leaving the editor.</p>
+        <div class="enh-grid">
+          <div class="enh-col"><div class="enh-label">What</div><p>A sidebar panel listing variables (masked by default), inline pull/push commands, and a status-bar indicator showing whether the local <code class="inline">.env</code> is in sync with the remote environment.</p></div>
+          <div class="enh-col"><div class="enh-label">Why</div><p>Developers shouldn't need to tab out to a browser or terminal for something this routine. This is where daily habit gets locked in — and neither Doppler nor EnvKey have a polished version of this today.</p></div>
+          <div class="enh-col"><div class="enh-label">How</div><p>Built on the VS Code Extension API, reusing <code class="inline">packages/crypto-core</code> directly (same encrypt/decrypt logic as web and CLI — no third implementation to keep in sync).</p></div>
+        </div>
+      </div>
+
+      <div class="enh-card">
+        <div class="enh-head">
+          <div class="enh-title"><span class="enh-icon">⚙</span> GitHub Actions / CI Integration</div>
+          <span class="phase-badge p3">Phase 3</span>
+        </div>
+        <p class="enh-sub">Extend "push once, sync everywhere" from local development into deployment pipelines.</p>
+        <div class="enh-grid">
+          <div class="enh-col"><div class="enh-label">What</div><p>An official GitHub Action that injects a decrypted environment as CI/CD env vars at pipeline runtime, with values automatically masked in logs.</p></div>
+          <div class="enh-col"><div class="enh-label">Why</div><p>Removes the last place teams still paste secrets manually — CI/CD platform settings — and closes the gap with Infisical/Vault on this specific workflow without adopting their full complexity.</p></div>
+          <div class="enh-col"><div class="enh-label">How</div><p>A scoped, short-lived CI token (not a user's personal OAuth session) authenticates the Action; it calls <code class="inline">GET /cli/pull</code> server-side and exports decrypted values only into the ephemeral runner environment.</p></div>
+        </div>
+      </div>
+
+      <div class="enh-card">
+        <div class="enh-head">
+          <div class="enh-title"><span class="enh-icon">{ }</span> Public API &amp; Language SDKs</div>
+          <span class="phase-badge p3">Phase 3</span>
+        </div>
+        <p class="enh-sub">Let applications fetch their own secrets at runtime instead of relying solely on a generated <code class="inline">.env</code> file.</p>
+        <div class="enh-grid">
+          <div class="enh-col"><div class="enh-label">What</div><p>Project-scoped API keys, a documented REST API, and thin SDKs (Node, Python, Go first) for fetching and decrypting secrets programmatically.</p></div>
+          <div class="enh-col"><div class="enh-label">Why</div><p>Some teams want runtime secret injection (12-factor style) rather than a generated file — this is the natural on-ramp without forcing every team into it.</p></div>
+          <div class="enh-col"><div class="enh-label">How</div><p>API keys are scoped to a single project + environment and can be revoked independently of any user's session; SDKs wrap the existing <code class="inline">/cli/pull</code>-equivalent endpoint and perform decryption client-side, same as the CLI.</p></div>
+        </div>
+      </div>
+
+      <div class="enh-card">
+        <div class="enh-head">
+          <div class="enh-title"><span class="enh-icon">☰</span> Role-Based Permissions</div>
+          <span class="phase-badge p4">Phase 4</span>
+        </div>
+        <p class="enh-sub">Grows the MVP's simple owner/member model only once teams actually need it.</p>
+        <div class="enh-grid">
+          <div class="enh-col"><div class="enh-label">What</div><p>Roles like Admin, Developer, and Viewer, with per-environment scoping — e.g. a contractor gets read/write on "development" only, never "production."</p></div>
+          <div class="enh-col"><div class="enh-label">Why</div><p>Deliberately not in MVP — a 3-person team doesn't need a permissions matrix, and building it early would add UI and decision-making overhead for exactly the audience we're trying to stay simple for. Add it only when usage data shows teams outgrowing owner/member.</p></div>
+          <div class="enh-col"><div class="enh-label">How</div><p>Extend <code class="inline">projects.members</code> with a <code class="inline">role</code> and optional <code class="inline">scopedEnvironments</code> array; enforce in Express middleware, not in the client.</p></div>
+        </div>
+      </div>
+
+      <div class="enh-card">
+        <div class="enh-head">
+          <div class="enh-title"><span class="enh-icon">↻</span> Secret Rotation Scheduling</div>
+          <span class="phase-badge p4">Phase 4</span>
+        </div>
+        <p class="enh-sub">Automatically rotate selected secrets (e.g. database credentials) on a schedule or on demand.</p>
+        <div class="enh-grid">
+          <div class="enh-col"><div class="enh-label">What</div><p>A rotation policy per variable (e.g. "every 30 days"), with the new value generated, encrypted, and pushed automatically, and the old one invalidated at the provider.</p></div>
+          <div class="enh-col"><div class="enh-label">Why</div><p>This is the first feature that starts to resemble Vault/Infisical territory — it's placed last and explicitly optional so EnvVault doesn't chase compliance-driven complexity before the core product has proven itself.</p></div>
+          <div class="enh-col"><div class="enh-label">How</div><p>Provider-specific rotation adapters (starting with common databases), triggered by a scheduled job that calls the provider's API, then performs the same client-side-encrypt-and-push flow the CLI uses.</p></div>
+        </div>
+      </div>
+
+      <div class="enh-card">
+        <div class="enh-head">
+          <div class="enh-title"><span class="enh-icon">⌂</span> Self-Hostable Open-Core Server</div>
+          <span class="phase-badge p4">Phase 4</span>
+        </div>
+        <p class="enh-sub">A Docker-deployable version of the API + database for teams that need full infrastructure control.</p>
+        <div class="enh-grid">
+          <div class="enh-col"><div class="enh-label">What</div><p>An open-source core (Express API + schema) that a team can run on their own infrastructure, pointed at their own MongoDB instance, with the hosted EnvVault remaining the default, easier path.</p></div>
+          <div class="enh-col"><div class="enh-label">Why</div><p>Matches Infisical's trust story for compliance-sensitive teams without making self-hosting the default experience — most of our audience wants zero infrastructure to manage, so this stays opt-in.</p></div>
+          <div class="enh-col"><div class="enh-label">How</div><p>Because the encryption boundary already lives entirely client-side, self-hosting the server changes nothing about the security model — it only changes who operates the ciphertext store.</p></div>
+        </div>
+      </div>
+
+      <div class="enh-card">
+        <div class="enh-head">
+          <div class="enh-title"><span class="enh-icon">✉</span> Notifications</div>
+          <span class="phase-badge p3">Phase 3</span>
+        </div>
+        <p class="enh-sub">Keep the team aware of sensitive changes without anyone needing to check the activity log manually.</p>
+        <div class="enh-grid">
+          <div class="enh-col"><div class="enh-label">What</div><p>Slack, Discord, and email alerts for production variable changes, new members joining/leaving, and new environments being created.</p></div>
+          <div class="enh-col"><div class="enh-label">Why</div><p>Turns the existing activity log from a "pull" experience (someone has to go look) into a "push" experience (the team finds out immediately) — cheap to build, high perceived value.</p></div>
+          <div class="enh-col"><div class="enh-label">How</div><p>Webhook subscriptions per project, fired from the same event pipeline that already writes to <code class="inline">activityLogs</code> — no new event system required.</p></div>
+        </div>
+      </div>
+
+      <div class="enh-card">
+        <div class="enh-head">
+          <div class="enh-title"><span class="enh-icon">⇢</span> One-Time Secret Sharing Links</div>
+          <span class="phase-badge p2">Phase 2</span>
+        </div>
+        <p class="enh-sub">For the rare case a single secret genuinely needs to leave the platform — replace the Slack-paste habit entirely, even for non-users.</p>
+        <div class="enh-grid">
+          <div class="enh-col"><div class="enh-label">What</div><p>Generate a link that reveals one secret exactly once, then self-destructs, optionally with an expiry window.</p></div>
+          <div class="enh-col"><div class="enh-label">Why</div><p>Even great tooling can't prevent every ad-hoc "just send me the key" moment — this makes that moment safe instead of trying to eliminate it entirely.</p></div>
+          <div class="enh-col"><div class="enh-label">How</div><p>Value is encrypted with a link-specific one-time key embedded only in the URL fragment (never sent to the server); the server marks the link consumed after first successful client-side decrypt.</p></div>
+        </div>
+      </div>
+
+      <p class="dim" style="margin-top:8px;">Anything not listed here — and in particular anything that starts to resemble certificate management, dynamic infrastructure secrets, or agent/AI-credential governance — is a deliberate non-goal per the positioning in <a href="#positioning">section 02</a>, not a gap in planning.</p>
+    </section>
+
+    <section class="block" id="metrics">
+      <h2><span class="num">15</span> Success Metrics</h2>
+      <p class="sec-sub">how we know MVP is actually done</p>
+      <ul>
+        <li>Sign up and reach a working dashboard in under 1 minute (OAuth, no forms)</li>
+        <li>Create a project and import an existing <code class="inline">.env</code> in a single action</li>
+        <li>Pull a complete, working environment with one CLI command and zero global install</li>
+        <li>Push an update with a visible diff and one confirmation</li>
+        <li>Onboard a new teammate to a running local app without a single secret manually shared</li>
+        <li>See a meaningful environment-to-environment diff (dev vs. production) in under 5 seconds</li>
+      </ul>
+      <div class="callout win">
+        <div class="icon">★</div>
+        <p><strong>North star:</strong> EnvVault becomes the single source of truth for environment variables for teams too small to need — or want — Vault, Infisical's full platform, or Doppler's enterprise tier.</p>
+      </div>
+
+      <footer class="doc-footer">envvault / engineering-docs / v1.0 — last updated 2026-07-08</footer>
+    </section>
+
+  </main>
+</div>
+
+<script>
+  const sidebar = document.getElementById('sidebar');
+  const toggle = document.getElementById('sidebarToggle');
+  toggle.addEventListener('click', () => sidebar.classList.toggle('open'));
+  document.querySelectorAll('.nav-link').forEach(link => {
+    link.addEventListener('click', () => sidebar.classList.remove('open'));
+  });
+
+  const sections = document.querySelectorAll('section.block');
+  const links = document.querySelectorAll('.nav-link');
+  const setActive = (id) => {
+    links.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + id));
+  };
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) setActive(entry.target.id);
+    });
+  }, { rootMargin: '-15% 0px -70% 0px', threshold: 0 });
+  sections.forEach(s => observer.observe(s));
+</script>
+
+</body>
+</html>

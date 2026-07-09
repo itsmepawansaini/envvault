@@ -1,0 +1,17 @@
+FROM node:20-alpine AS runtime
+
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY package.json package-lock.json ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/cli/package.json apps/cli/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY packages/crypto-core/package.json packages/crypto-core/package.json
+RUN npm ci --omit=dev
+
+COPY apps/api apps/api
+
+USER node
+EXPOSE 4500
+CMD ["npm", "run", "start", "--workspace", "@envvault/api"]
