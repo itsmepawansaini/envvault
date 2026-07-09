@@ -13,7 +13,9 @@ export async function connectDatabase() {
 
   try {
     await mongoose.connect(uri, {
-      serverSelectionTimeoutMS: Number(process.env.MONGODB_TIMEOUT_MS || 2500)
+      serverSelectionTimeoutMS: Number(
+        process.env.MONGODB_TIMEOUT_MS || (process.env.NODE_ENV === 'production' ? 10000 : 2500)
+      )
     });
     console.log('MongoDB connected for EnvVault API.');
     return mongoose.connection;
