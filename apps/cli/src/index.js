@@ -19,7 +19,7 @@ import {
   wrapProjectKey
 } from '@envvault/crypto-core';
 
-const defaultApiBase = process.env.ENVVAULT_API_BASE || 'http://localhost:4500/api';
+const defaultApiBase = process.env.ENVVAULT_API_BASE || 'https://envvault-staging.onrender.com/api';
 const vaultDir = resolve(process.cwd(), '.envvault');
 const configPath = resolve(vaultDir, 'config.json');
 const sessionPath = resolve(vaultDir, 'session.json');
@@ -31,7 +31,7 @@ const program = new Command();
 program
   .name('envvault')
   .description('Git-shaped encrypted environment variable sync.')
-  .version('0.1.1');
+  .version('0.1.2');
 
 program
   .command('login')

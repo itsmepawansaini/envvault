@@ -1,6 +1,6 @@
 {
   "name": "@itspawansaini/envvault",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "End-to-end encrypted .env sync for developers and small teams.",
   "keywords": [
     "env",

@@ -44,10 +44,10 @@ curl https://envvault-staging.onrender.com/health
 
 Then verify GitHub login in the browser. Render free web services sleep after inactivity, so the first staging request can take about one minute.
 
-## 6. Release CLI 0.1.1
+## 6. Release CLI
 
-After the Render URL is confirmed, update the CLI default API URL, bump the package to `0.1.1`, publish it, and test:
+After the Render URL is confirmed, update the CLI default API URL, publish the next patch, and test:
 
 ```bash
-npx @itspawansaini/envvault@0.1.1 login
+npx @itspawansaini/envvault login
 ```
