@@ -27,8 +27,18 @@ router.get(
 router.post(
   '/',
   asyncHandler(async (req, res) => {
+    const name = requireName(req.body.name, 'Project');
+    const duplicate = await Project.findOne({
+      name,
+      archivedAt: null,
+      $or: [{ ownerId: req.user.sub }, { 'members.userId': req.user.sub }]
+    });
+    if (duplicate) {
+      throw new ApiError(409, 'PROJECT_NAME_TAKEN', `A project named ${name} already exists.`);
+    }
+
     const project = await Project.create({
-      name: requireName(req.body.name, 'Project'),
+      name,
       ownerId: req.user.sub,
       members: [{ userId: req.user.sub, role: 'owner' }]
     });

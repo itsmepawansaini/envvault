@@ -1,10 +1,15 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Activity,
   Archive,
   ArchiveRestore,
+  Check,
+  ChevronDown,
+  CircleAlert,
+  CircleCheck,
   CircleUserRound,
+  ClipboardPaste,
   Copy,
   CopyPlus,
   Crown,
@@ -18,14 +23,18 @@ import {
   KeyRound,
   LockKeyhole,
   LogOut,
+  Moon,
   Plus,
   RefreshCcw,
   Save,
   Search,
+  Sun,
   Trash2,
+  TriangleAlert,
   Upload,
   UserPlus,
   UsersRound,
+  WrapText,
   X
 } from 'lucide-react';
 import {
@@ -54,7 +63,8 @@ function App() {
   const [environmentName, setEnvironmentName] = useState('development');
   const [variableKey, setVariableKey] = useState('DATABASE_URL');
   const [variableValue, setVariableValue] = useState('');
-  const [status, setStatus] = useState('Ready for development login');
+  const [status, setStatusMessage] = useState('Ready for development login');
+  const [statusTone, setStatusTone] = useState('info');
   const [isLoading, setIsLoading] = useState(false);
   const [editingId, setEditingId] = useState('');
   const [editKey, setEditKey] = useState('');
@@ -75,6 +85,38 @@ function App() {
   const [projectEnvFile, setProjectEnvFile] = useState(null);
   const [authProviders, setAuthProviders] = useState({ github: true, google: false });
   const [showArchivedProjects, setShowArchivedProjects] = useState(false);
+  const [activeTab, setActiveTab] = useState('variables');
+  const [dialog, setDialog] = useState(null);
+  const [showEnvForm, setShowEnvForm] = useState(false);
+  const [toastVisible, setToastVisible] = useState(true);
+  const dialogResolver = useRef(null);
+  const [showPasteArea, setShowPasteArea] = useState(false);
+  const [pasteText, setPasteText] = useState('');
+  const [theme, setTheme] = useState(() => {
+    try {
+      const stored = window.localStorage.getItem('envvault:theme');
+      if (stored === 'light' || stored === 'dark') return stored;
+      return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    } catch (_error) {
+      return 'dark';
+    }
+  });
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  const [loadingEnvironments, setLoadingEnvironments] = useState(false);
+  const [loadingVariables, setLoadingVariables] = useState(false);
+  const [loadingCollab, setLoadingCollab] = useState(false);
+  const [copiedId, setCopiedId] = useState('');
+  const [variableValueMultiline, setVariableValueMultiline] = useState(false);
+  const [keyBackedUp, setKeyBackedUp] = useState(null);
+  const [checklistDismissed, setChecklistDismissed] = useState(() => {
+    try {
+      return window.localStorage.getItem('envvault:checklist-dismissed') === '1';
+    } catch (_error) {
+      return false;
+    }
+  });
+  const copyTimerRef = useRef(null);
+  const userRef = useRef(null);
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId);
   const selectedEnvironment = environments.find((environment) => environment.id === selectedEnvironmentId);
@@ -106,16 +148,6 @@ function App() {
     ? `npx @itspawansaini/envvault login && npx @itspawansaini/envvault init --project ${selectedProject.id} --env ${selectedEnvironment.name}`
     : '';
 
-  const metrics = useMemo(
-    () => [
-      { icon: <LockKeyhole />, label: 'Security', value: 'Client encrypted' },
-      { icon: <KeyRound />, label: 'Projects', value: `${projects.length} project${projects.length === 1 ? '' : 's'}` },
-      { icon: <UsersRound />, label: 'Team', value: `${members.length} member${members.length === 1 ? '' : 's'}` },
-      { icon: <Activity />, label: 'Variables', value: `${variables.length} key${variables.length === 1 ? '' : 's'}` }
-    ],
-    [members.length, projects.length, variables.length]
-  );
-
   useEffect(() => {
     apiFetch('/auth/providers').then(setAuthProviders).catch(() => {});
     fetchMe();
@@ -145,6 +177,10 @@ function App() {
 
     fetchEnvironments(selectedProjectId);
     fetchCollaboration(selectedProjectId);
+    setKeyBackedUp(null);
+    apiFetch(`/projects/${selectedProjectId}/key`)
+      .then((response) => setKeyBackedUp(Boolean(response.key?.encryptedProjectKey)))
+      .catch(() => {});
   }, [selectedProjectId]);
 
   useEffect(() => {
@@ -158,6 +194,96 @@ function App() {
 
     fetchVariables(selectedEnvironmentId);
   }, [selectedEnvironmentId]);
+
+  useEffect(() => {
+    if (!status) return;
+    setToastVisible(true);
+    const timer = setTimeout(() => setToastVisible(false), 4000);
+    return () => clearTimeout(timer);
+  }, [status]);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
+  useEffect(() => {
+    function onExpired() {
+      if (!userRef.current) return;
+      setUser(null);
+      setProjects([]);
+      setSelectedProjectId('');
+      setSelectedEnvironmentId('');
+      setStatus('Session expired — please sign in again', 'error');
+    }
+    window.addEventListener('envvault:session-expired', onExpired);
+    return () => window.removeEventListener('envvault:session-expired', onExpired);
+  }, []);
+
+  useEffect(() => {
+    if (!Object.keys(revealedValues).length) return;
+    const timer = setTimeout(() => {
+      setRevealedValues({});
+      setStatus('Revealed values hidden again');
+    }, 30000);
+    function onVisibility() {
+      if (document.visibilityState === 'hidden') setRevealedValues({});
+    }
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [revealedValues]);
+
+  function setStatus(message, tone = 'info') {
+    setStatusMessage(message);
+    setStatusTone(tone);
+  }
+
+  function flashCopied(id) {
+    setCopiedId(id);
+    clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => setCopiedId(''), 1600);
+  }
+
+  function dismissChecklist() {
+    setChecklistDismissed(true);
+    try {
+      window.localStorage.setItem('envvault:checklist-dismissed', '1');
+    } catch (_error) {}
+  }
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      window.localStorage.setItem('envvault:theme', theme);
+    } catch (_error) {}
+  }, [theme]);
+
+  function toggleTheme() {
+    setTheme((current) => (current === 'dark' ? 'light' : 'dark'));
+  }
+
+  async function importPastedEnv(event) {
+    event.preventDefault();
+    if (!pasteText.trim()) return;
+    await handleEnvFile(new File([pasteText], '.env', { type: 'text/plain' }));
+    setPasteText('');
+    setShowPasteArea(false);
+  }
+
+  function openDialog(config) {
+    return new Promise((resolve) => {
+      dialogResolver.current = resolve;
+      setDialog(config);
+    });
+  }
+
+  function closeDialog(result) {
+    dialogResolver.current?.(result);
+    dialogResolver.current = null;
+    setDialog(null);
+  }
 
   async function fetchMe() {
     try {
@@ -178,7 +304,7 @@ function App() {
       setStatus('Development session created');
       await fetchProjects();
     } catch (error) {
-      setStatus(error.message);
+      setStatus(error.message, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -193,6 +319,14 @@ function App() {
   }
 
   async function logout() {
+    const confirmed = await openDialog({
+      kind: 'confirm',
+      title: 'Sign out',
+      message: 'Sign out of EnvVault? Your local project keys stay in this browser, so you can pick up where you left off.',
+      confirmLabel: 'Sign out'
+    });
+    if (!confirmed) return;
+
     setIsLoading(true);
     try {
       await apiFetch('/auth/logout', { method: 'POST' });
@@ -216,48 +350,68 @@ function App() {
   }
 
   async function fetchProjects() {
-    const response = await apiFetch(`/projects${showArchivedProjects ? '?archived=true' : ''}`);
-    const nextProjects = response.projects || [];
-    setProjects(nextProjects);
-    setSelectedProjectId((currentId) => {
-      if (nextProjects.some((project) => project.id === currentId)) return currentId;
-      return nextProjects[0]?.id || '';
-    });
+    setLoadingProjects(true);
+    try {
+      const response = await apiFetch(`/projects${showArchivedProjects ? '?archived=true' : ''}`);
+      const nextProjects = response.projects || [];
+      setProjects(nextProjects);
+      setSelectedProjectId((currentId) => {
+        if (nextProjects.some((project) => project.id === currentId)) return currentId;
+        return nextProjects[0]?.id || '';
+      });
+    } finally {
+      setLoadingProjects(false);
+    }
   }
 
   async function fetchEnvironments(projectId) {
-    const response = await apiFetch(`/projects/${projectId}/environments`);
-    const nextEnvironments = response.environments || [];
-    setEnvironments(nextEnvironments);
-    setCompareFromId((currentId) => {
-      if (nextEnvironments.some((environment) => environment.id === currentId)) return currentId;
-      return nextEnvironments[0]?.id || '';
-    });
-    setCompareToId((currentId) => {
-      if (nextEnvironments.some((environment) => environment.id === currentId)) return currentId;
-      return nextEnvironments[1]?.id || nextEnvironments[0]?.id || '';
-    });
-    setSelectedEnvironmentId((currentId) => {
-      if (nextEnvironments.some((environment) => environment.id === currentId)) return currentId;
-      return nextEnvironments[0]?.id || '';
-    });
+    setLoadingEnvironments(true);
+    try {
+      const response = await apiFetch(`/projects/${projectId}/environments`);
+      const nextEnvironments = response.environments || [];
+      setEnvironments(nextEnvironments);
+      setCompareFromId((currentId) => {
+        if (nextEnvironments.some((environment) => environment.id === currentId)) return currentId;
+        return nextEnvironments[0]?.id || '';
+      });
+      setCompareToId((currentId) => {
+        if (nextEnvironments.some((environment) => environment.id === currentId)) return currentId;
+        return nextEnvironments[1]?.id || nextEnvironments[0]?.id || '';
+      });
+      setSelectedEnvironmentId((currentId) => {
+        if (nextEnvironments.some((environment) => environment.id === currentId)) return currentId;
+        return nextEnvironments[0]?.id || '';
+      });
+    } finally {
+      setLoadingEnvironments(false);
+    }
   }
 
   async function fetchVariables(environmentId) {
-    const response = await apiFetch(`/environments/${environmentId}/variables`);
-    setVariables(response.variables || []);
+    setLoadingVariables(true);
+    try {
+      const response = await apiFetch(`/environments/${environmentId}/variables`);
+      setVariables(response.variables || []);
+    } finally {
+      setLoadingVariables(false);
+    }
   }
 
   async function fetchCollaboration(projectId) {
-    const [memberResponse, activityResponse, keyRequestResponse] = await Promise.all([
-      apiFetch(`/projects/${projectId}/members`),
-      apiFetch(`/projects/${projectId}/activity`),
-      apiFetch(`/projects/${projectId}/key-requests`)
-    ]);
-    setMembers(memberResponse.members || []);
-    setCanManageMembers(Boolean(memberResponse.canManage));
-    setActivity(activityResponse.activity || []);
-    setKeyRequests(keyRequestResponse.requests || []);
+    setLoadingCollab(true);
+    try {
+      const [memberResponse, activityResponse, keyRequestResponse] = await Promise.all([
+        apiFetch(`/projects/${projectId}/members`),
+        apiFetch(`/projects/${projectId}/activity`),
+        apiFetch(`/projects/${projectId}/key-requests`)
+      ]);
+      setMembers(memberResponse.members || []);
+      setCanManageMembers(Boolean(memberResponse.canManage));
+      setActivity(activityResponse.activity || []);
+      setKeyRequests(keyRequestResponse.requests || []);
+    } finally {
+      setLoadingCollab(false);
+    }
   }
 
   async function approveKeyRequest(request) {
@@ -270,9 +424,9 @@ function App() {
         body: JSON.stringify({ encryptedProjectKey })
       });
       await fetchCollaboration(selectedProjectId);
-      setStatus(`${request.deviceName} approved`);
+      setStatus(`${request.deviceName} approved`, 'success');
     } catch (error) {
-      setStatus(error.message);
+      setStatus(error.message, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -298,32 +452,45 @@ function App() {
       setInvitePhrase('');
       await fetchCollaboration(selectedProjectId);
       await fetchProjects();
-      setStatus(encryptedProjectKey ? 'Member invited with wrapped key access' : 'Member invited; key access is still pending');
+      setStatus(encryptedProjectKey ? 'Member invited with wrapped key access' : 'Member invited; key access is still pending', 'success');
     } catch (error) {
-      setStatus(error.message);
+      setStatus(error.message, 'error');
     } finally {
       setIsLoading(false);
     }
   }
 
   async function removeMember(member) {
-    if (!window.confirm(`Remove ${member.name || member.email} from this project?`)) return;
+    const confirmed = await openDialog({
+      kind: 'confirm',
+      danger: true,
+      title: 'Remove member',
+      message: `Remove ${member.name || member.email} from this project? They will lose access to all of its environments.`,
+      confirmLabel: 'Remove'
+    });
+    if (!confirmed) return;
 
     setIsLoading(true);
     try {
       await apiFetch(`/projects/${selectedProjectId}/members/${member.id}`, { method: 'DELETE' });
       await fetchCollaboration(selectedProjectId);
       await fetchProjects();
-      setStatus(`${member.name || member.email} removed`);
+      setStatus(`${member.name || member.email} removed`, 'success');
     } catch (error) {
-      setStatus(error.message);
+      setStatus(error.message, 'error');
     } finally {
       setIsLoading(false);
     }
   }
 
   async function transferOwnership(member) {
-    if (!window.confirm(`Transfer ownership of ${selectedProject.name} to ${member.name || member.email}?`)) return;
+    const confirmed = await openDialog({
+      kind: 'confirm',
+      title: 'Transfer ownership',
+      message: `Make ${member.name || member.email} the owner of ${selectedProject.name}? You will keep access as a regular member.`,
+      confirmLabel: 'Transfer'
+    });
+    if (!confirmed) return;
 
     setIsLoading(true);
     try {
@@ -333,9 +500,9 @@ function App() {
       });
       await fetchProjects();
       await fetchCollaboration(selectedProjectId);
-      setStatus(`Ownership transferred to ${member.name || member.email}`);
+      setStatus(`Ownership transferred to ${member.name || member.email}`, 'success');
     } catch (error) {
-      setStatus(error.message);
+      setStatus(error.message, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -350,7 +517,52 @@ function App() {
       setCompareResult(response);
       setStatus(`Compared ${response.from.name} to ${response.to.name}`);
     } catch (error) {
-      setStatus(error.message);
+      setStatus(error.message, 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function syncMissingKeys() {
+    const missingKeys = compareResult?.diff?.removed || [];
+    if (!selectedProjectId || !missingKeys.length) return;
+    const fromEnv = compareResult.from;
+    const toEnv = compareResult.to;
+
+    const confirmed = await openDialog({
+      kind: 'confirm',
+      title: 'Copy missing keys',
+      message: `Copy ${missingKeys.length} key${missingKeys.length === 1 ? '' : 's'} from ${fromEnv.name} to ${toEnv.name}? Keys that already exist in ${toEnv.name} are not touched.`,
+      confirmLabel: 'Copy keys'
+    });
+    if (!confirmed) return;
+
+    const headers = await getProductionHeadersForEnvironment(toEnv, `copy ${missingKeys.length} keys`);
+    if (headers === null) return;
+
+    setIsLoading(true);
+    try {
+      const projectKey = await ensureProjectKey(selectedProjectId);
+      const response = await apiFetch(`/environments/${fromEnv.id}/variables`);
+      const sourceVariables = (response.variables || []).filter((variable) => missingKeys.includes(variable.key));
+      const encryptedVariables = await Promise.all(
+        sourceVariables.map(async (variable) => {
+          const plaintext = await decryptValue(variable.encryptedValue, variable.iv, projectKey);
+          return { key: variable.key, ...(await encryptSecretPayload(selectedProjectId, plaintext)) };
+        })
+      );
+      await apiFetch(`/environments/${toEnv.id}/variables/bulk-import`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ variables: encryptedVariables })
+      });
+
+      if (selectedEnvironmentId === toEnv.id) await fetchVariables(toEnv.id);
+      const refreshed = await apiFetch(`/projects/${selectedProjectId}/compare?from=${compareFromId}&to=${compareToId}`);
+      setCompareResult(refreshed);
+      setStatus(`Copied ${encryptedVariables.length} key${encryptedVariables.length === 1 ? '' : 's'} to ${toEnv.name}`, 'success');
+    } catch (error) {
+      setStatus(error.message, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -358,14 +570,19 @@ function App() {
 
   async function createProject(event) {
     event.preventDefault();
-    if (!projectName.trim()) return;
+    const trimmedName = projectName.trim();
+    if (!trimmedName) return;
+    if (projects.some((project) => project.name.toLowerCase() === trimmedName.toLowerCase())) {
+      setStatus(`A project named ${trimmedName} already exists.`, 'error');
+      return;
+    }
 
     setIsLoading(true);
     try {
       const quickImportEntries = projectEnvFile ? await readEnvFileEntries(projectEnvFile) : [];
       const quickEnvironmentName = projectEnvFile ? detectEnvironmentName(projectEnvFile.name) || 'development' : '';
       const productionHeaders = quickEnvironmentName === 'production'
-        ? getProductionHeadersForEnvironment({ name: 'production' }, `import ${quickImportEntries.length} keys`)
+        ? await getProductionHeadersForEnvironment({ name: 'production' }, `import ${quickImportEntries.length} keys`)
         : {};
       if (productionHeaders === null) return;
 
@@ -404,12 +621,12 @@ function App() {
         await fetchEnvironments(response.project.id);
         setSelectedEnvironmentId(quickEnvironment.id);
         await fetchVariables(quickEnvironment.id);
-        setStatus(`Project created and ${quickImportEntries.length} encrypted variables imported`);
+        setStatus(`Project created and ${quickImportEntries.length} encrypted variables imported`, 'success');
       } else {
-        setStatus('Project created in MongoDB');
+        setStatus('Project created', 'success');
       }
     } catch (error) {
-      setStatus(error.message);
+      setStatus(error.message, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -427,10 +644,10 @@ function App() {
       });
       setEnvironmentName('');
       setSelectedEnvironmentId(response.environment.id);
-      setStatus('Environment created');
+      setStatus('Environment created', 'success');
       await fetchEnvironments(selectedProjectId);
     } catch (error) {
-      setStatus(error.message);
+      setStatus(error.message, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -438,7 +655,13 @@ function App() {
 
   async function renameProject() {
     if (!selectedProject || !canManageMembers) return;
-    const name = window.prompt('Rename project', selectedProject.name)?.trim();
+    const name = (await openDialog({
+      kind: 'prompt',
+      title: 'Rename project',
+      message: 'Choose a new name for this project.',
+      initialValue: selectedProject.name,
+      confirmLabel: 'Rename'
+    }))?.trim();
     if (!name || name === selectedProject.name) return;
 
     await runLifecycleAction(
@@ -456,7 +679,13 @@ function App() {
 
   async function archiveProject() {
     if (!selectedProject || !canManageMembers) return;
-    if (!window.confirm(`Archive ${selectedProject.name}? It will leave the active project list.`)) return;
+    const confirmed = await openDialog({
+      kind: 'confirm',
+      title: 'Archive project',
+      message: `Archive ${selectedProject.name}? It moves to the Archived list and can be restored at any time.`,
+      confirmLabel: 'Archive'
+    });
+    if (!confirmed) return;
     const projectId = selectedProject.id;
 
     await runLifecycleAction(
@@ -485,11 +714,16 @@ function App() {
 
   async function deleteProject() {
     if (!selectedProject || !canManageMembers) return;
-    const confirmation = window.prompt(`Type ${selectedProject.name} to permanently delete this project and all its environments.`);
-    if (confirmation !== selectedProject.name) {
-      if (confirmation !== null) setStatus('Project deletion cancelled');
-      return;
-    }
+    const confirmation = await openDialog({
+      kind: 'match',
+      danger: true,
+      title: 'Delete project',
+      message: `This permanently deletes ${selectedProject.name} with all of its environments and variables.`,
+      expected: selectedProject.name,
+      placeholder: selectedProject.name,
+      confirmLabel: 'Delete forever'
+    });
+    if (confirmation !== selectedProject.name) return;
 
     const projectId = selectedProject.id;
     const name = selectedProject.name;
@@ -506,9 +740,15 @@ function App() {
 
   async function renameEnvironment() {
     if (!selectedEnvironment) return;
-    const name = window.prompt('Rename environment', selectedEnvironment.name)?.trim();
+    const name = (await openDialog({
+      kind: 'prompt',
+      title: 'Rename environment',
+      message: 'Choose a new name for this environment.',
+      initialValue: selectedEnvironment.name,
+      confirmLabel: 'Rename'
+    }))?.trim();
     if (!name || name === selectedEnvironment.name) return;
-    const headers = getProductionHeadersForEnvironment(
+    const headers = await getProductionHeadersForEnvironment(
       name.toLowerCase() === 'production' ? { name: 'production' } : selectedEnvironment,
       `rename ${selectedEnvironment.name} to ${name}`
     );
@@ -527,9 +767,15 @@ function App() {
 
   async function cloneEnvironment() {
     if (!selectedEnvironment) return;
-    const name = window.prompt('Name the cloned environment', `${selectedEnvironment.name}-copy`)?.trim();
+    const name = (await openDialog({
+      kind: 'prompt',
+      title: 'Clone environment',
+      message: `Copy every variable from ${selectedEnvironment.name} into a new environment.`,
+      initialValue: `${selectedEnvironment.name}-copy`,
+      confirmLabel: 'Clone'
+    }))?.trim();
     if (!name) return;
-    const headers = getProductionHeadersForEnvironment(
+    const headers = await getProductionHeadersForEnvironment(
       name.toLowerCase() === 'production' ? { name: 'production' } : selectedEnvironment,
       `clone ${selectedEnvironment.name} as ${name}`
     );
@@ -551,9 +797,16 @@ function App() {
 
   async function deleteEnvironment() {
     if (!selectedEnvironment) return;
-    const headers = getProductionHeaders(`delete ${selectedEnvironment.name}`);
+    const headers = await getProductionHeaders(`delete ${selectedEnvironment.name}`);
     if (headers === null) return;
-    if (!window.confirm(`Delete ${selectedEnvironment.name} and all of its variables? This cannot be undone.`)) return;
+    const confirmed = await openDialog({
+      kind: 'confirm',
+      danger: true,
+      title: 'Delete environment',
+      message: `Delete ${selectedEnvironment.name} and all of its variables? This cannot be undone.`,
+      confirmLabel: 'Delete'
+    });
+    if (!confirmed) return;
     const environmentId = selectedEnvironment.id;
     const name = selectedEnvironment.name;
 
@@ -572,9 +825,9 @@ function App() {
     try {
       const response = await action();
       await onSuccess(response);
-      setStatus(successMessage);
+      setStatus(successMessage, 'success');
     } catch (error) {
-      setStatus(error.message);
+      setStatus(error.message, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -586,11 +839,11 @@ function App() {
     if (!selectedProjectId || !selectedEnvironmentId || !normalizedKey || !variableValue) return;
 
     if (variables.some((variable) => variable.key === normalizedKey)) {
-      setStatus(`${normalizedKey} already exists in this environment.`);
+      setStatus(`${normalizedKey} already exists in this environment.`, 'error');
       return;
     }
 
-    const productionHeaders = getProductionHeaders('add a variable');
+    const productionHeaders = await getProductionHeaders('add a variable');
     if (productionHeaders === null) return;
 
     setIsLoading(true);
@@ -607,10 +860,10 @@ function App() {
 
       setVariableKey('');
       setVariableValue('');
-      setStatus('Variable encrypted in browser and saved as ciphertext');
+      setStatus('Variable encrypted in browser and saved as ciphertext', 'success');
       await fetchVariables(selectedEnvironmentId);
     } catch (error) {
-      setStatus(error.message);
+      setStatus(error.message, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -634,11 +887,11 @@ function App() {
 
     const duplicate = variables.some((item) => item.id !== variable.id && item.key === normalizedKey);
     if (duplicate) {
-      setStatus(`${normalizedKey} already exists in this environment.`);
+      setStatus(`${normalizedKey} already exists in this environment.`, 'error');
       return;
     }
 
-    const productionHeaders = getProductionHeaders(`edit ${variable.key}`);
+    const productionHeaders = await getProductionHeaders(`edit ${variable.key}`);
     if (productionHeaders === null) return;
 
     setIsLoading(true);
@@ -659,19 +912,26 @@ function App() {
         return next;
       });
       cancelEdit();
-      setStatus(`${normalizedKey} updated`);
+      setStatus(`${normalizedKey} updated`, 'success');
     } catch (error) {
-      setStatus(error.message);
+      setStatus(error.message, 'error');
     } finally {
       setIsLoading(false);
     }
   }
 
   async function deleteVariable(variable) {
-    const productionHeaders = getProductionHeaders(`delete ${variable.key}`);
+    const productionHeaders = await getProductionHeaders(`delete ${variable.key}`);
     if (productionHeaders === null) return;
 
-    if (!window.confirm(`Delete ${variable.key}? This cannot be undone.`)) return;
+    const confirmed = await openDialog({
+      kind: 'confirm',
+      danger: true,
+      title: 'Delete variable',
+      message: `Delete ${variable.key}? This cannot be undone.`,
+      confirmLabel: 'Delete'
+    });
+    if (!confirmed) return;
 
     setIsLoading(true);
     try {
@@ -685,9 +945,9 @@ function App() {
         delete next[variable.id];
         return next;
       });
-      setStatus(`${variable.key} deleted`);
+      setStatus(`${variable.key} deleted`, 'success');
     } catch (error) {
-      setStatus(error.message);
+      setStatus(error.message, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -710,7 +970,7 @@ function App() {
       setRevealedValues((current) => ({ ...current, [variable.id]: plaintext }));
       setStatus(`${variable.key} revealed locally`);
     } catch (_error) {
-      setStatus(`Cannot decrypt ${variable.key} with this browser's local project key.`);
+      setStatus(`Cannot decrypt ${variable.key} with this browser's local project key.`, 'error');
     }
   }
 
@@ -720,20 +980,29 @@ function App() {
       const plaintext = revealedValues[variable.id] || (await decryptValue(variable.encryptedValue, variable.iv, projectKey));
       await logSensitiveAction('variable.copied', variable.id);
       await navigator.clipboard.writeText(plaintext);
-      setStatus(`${variable.key} copied`);
+      flashCopied(variable.id);
+      setStatus(`${variable.key} copied`, 'success');
     } catch (_error) {
-      setStatus(`Cannot copy ${variable.key}; reveal failed with this local key.`);
+      setStatus(`Cannot copy ${variable.key}; reveal failed with this local key.`, 'error');
     }
   }
 
-  function getProductionHeaders(action) {
+  async function getProductionHeaders(action) {
     return getProductionHeadersForEnvironment(selectedEnvironment, action);
   }
 
-  function getProductionHeadersForEnvironment(environment, action) {
+  async function getProductionHeadersForEnvironment(environment, action) {
     if (environment?.name?.toLowerCase() !== 'production') return {};
 
-    const confirmation = window.prompt(`Type production to ${action} in the production environment.`);
+    const confirmation = await openDialog({
+      kind: 'match',
+      danger: true,
+      title: 'Production change',
+      message: `You are about to ${action} in the production environment.`,
+      expected: 'production',
+      placeholder: 'production',
+      confirmLabel: 'Confirm change'
+    });
     if (confirmation !== 'production') {
       setStatus('Production change cancelled');
       return null;
@@ -749,7 +1018,7 @@ function App() {
       const validEntries = await readEnvFileEntries(file);
 
       if (!validEntries.length) {
-        setStatus('No valid KEY=value pairs found in file.');
+        setStatus('No valid KEY=value pairs found in file.', 'error');
         return;
       }
 
@@ -775,7 +1044,7 @@ function App() {
       });
       setStatus(`Prepared ${validEntries.length} keys from ${file.name}`);
     } catch (error) {
-      setStatus(error.message || 'Import failed.');
+      setStatus(error.message || 'Import failed.', 'error');
     }
   }
 
@@ -826,7 +1095,7 @@ function App() {
       return;
     }
 
-    const productionHeaders = getProductionHeadersForEnvironment(importPreview.environment, `import ${selectedEntries.length} keys`);
+    const productionHeaders = await getProductionHeadersForEnvironment(importPreview.environment, `import ${selectedEntries.length} keys`);
     if (productionHeaders === null) return;
 
     setIsLoading(true);
@@ -845,10 +1114,10 @@ function App() {
 
       setSelectedEnvironmentId(importPreview.environment.id);
       await fetchVariables(importPreview.environment.id);
-      setStatus(`Imported ${response.summary.created} new and ${response.summary.updated} updated keys into ${importPreview.environment.name}`);
+      setStatus(`Imported ${response.summary.created} new and ${response.summary.updated} updated keys into ${importPreview.environment.name}`, 'success');
       clearImportPreview();
     } catch (error) {
-      setStatus(error.message);
+      setStatus(error.message, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -868,9 +1137,9 @@ function App() {
       const content = `${stringifyEnv(decrypted)}\n`;
       const suffix = selectedEnvironment.name === 'development' ? '' : `.${selectedEnvironment.name}`;
       downloadTextFile(`.env${suffix}`, content);
-      setStatus(`Exported ${variables.length} keys from ${selectedEnvironment.name}`);
+      setStatus(`Exported ${variables.length} keys from ${selectedEnvironment.name}`, 'success');
     } catch (_error) {
-      setStatus(`Export failed; one or more keys cannot be decrypted with this browser's local project key.`);
+      setStatus(`Export failed; one or more keys cannot be decrypted with this browser's local project key.`, 'error');
     }
   }
 
@@ -886,9 +1155,10 @@ function App() {
         body: JSON.stringify({ encryptedProjectKey })
       });
       setSyncPhrase('');
-      setStatus('Wrapped project key published');
+      setKeyBackedUp(true);
+      setStatus('Wrapped project key published', 'success');
     } catch (error) {
-      setStatus(error.message);
+      setStatus(error.message, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -908,9 +1178,9 @@ function App() {
       window.localStorage.setItem(projectKeyStorageKey(selectedProjectId), projectKey);
       setSyncPhrase('');
       setRevealedValues({});
-      setStatus('Local project key restored');
+      setStatus('Local project key restored', 'success');
     } catch (_error) {
-      setStatus('Could not restore project key with that sync phrase.');
+      setStatus('Could not restore project key with that sync phrase.', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -919,7 +1189,8 @@ function App() {
   async function copyCliSetupCommand() {
     if (!cliSetupCommand) return;
     await navigator.clipboard.writeText(cliSetupCommand);
-    setStatus('CLI setup command copied');
+    flashCopied('cli');
+    setStatus('CLI setup command copied', 'success');
   }
 
   async function logSensitiveAction(action, targetId, metadata = {}) {
@@ -930,6 +1201,78 @@ function App() {
     fetchCollaboration(selectedProjectId).catch(() => {});
   }
 
+  if (!user) {
+    return (
+      <main className="auth-screen">
+        <button
+          className="icon-action theme-toggle-floating"
+          type="button"
+          onClick={toggleTheme}
+          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+        </button>
+        <div className="auth-card">
+          <div className="auth-brand">
+            <div className="brand-mark">EV</div>
+            <strong>EnvVault</strong>
+          </div>
+          <h1>Team secrets, encrypted in your browser</h1>
+          <p>
+            Keep environment variables organized per project and environment. Values are encrypted locally before
+            they are stored, so only you and your team can ever read them.
+          </p>
+          <div className="auth-actions">
+            {authProviders.github ? (
+              <button className="primary-action" type="button" onClick={githubLogin} disabled={isLoading}>
+                <Github size={18} />
+                Continue with GitHub
+              </button>
+            ) : null}
+            {authProviders.google ? (
+              <button className="primary-action" type="button" onClick={googleLogin} disabled={isLoading}>
+                <CircleUserRound size={18} />
+                Continue with Google
+              </button>
+            ) : null}
+            <button className="ghost-action" type="button" onClick={devLogin} disabled={isLoading}>
+              <KeyRound size={16} />
+              Use development login
+            </button>
+          </div>
+          <ul className="auth-points">
+            <li>
+              <LockKeyhole size={15} />
+              Values encrypted client-side, stored only as ciphertext
+            </li>
+            <li>
+              <UsersRound size={15} />
+              Invite teammates and approve their device keys
+            </li>
+            <li>
+              <GitCompareArrows size={15} />
+              Compare environments without revealing plaintext
+            </li>
+          </ul>
+        </div>
+        <p className="auth-status" role="status" aria-live="polite">{status}</p>
+      </main>
+    );
+  }
+
+  const hasProjects = projects.length > 0;
+  const checklistItems = selectedProject
+    ? [
+        { label: 'Add an environment', done: environments.length > 0, onClick: () => setShowEnvForm(true) },
+        { label: 'Add a variable', done: variables.length > 0, onClick: () => setActiveTab('variables') },
+        { label: 'Invite a teammate', done: members.length > 1, onClick: () => setActiveTab('team') },
+        { label: 'Back up your key', done: keyBackedUp === true, onClick: () => setActiveTab('setup') }
+      ]
+    : [];
+  const showChecklist = Boolean(selectedProject) && !checklistDismissed && checklistItems.some((item) => !item.done);
+  const showKeyBanner = Boolean(selectedProject) && keyBackedUp === false && !showChecklist && activeTab !== 'setup';
+
   return (
     <main className="app-shell">
       <a className="skip-link" href="#workspace">Skip to workspace</a>
@@ -938,149 +1281,29 @@ function App() {
           <div className="brand-mark">EV</div>
           <div>
             <strong>EnvVault</strong>
-            <span>ciphertext-only secret sync</span>
+            <span>encrypted secret sync</span>
           </div>
         </div>
 
-        <div className="sidebar-section">
-          <span className="sidebar-label">Workspace</span>
-          <strong>{selectedProject?.name || 'No project selected'}</strong>
-          <small>{selectedEnvironment?.name || 'No environment selected'}</small>
-        </div>
-
-        <div className="sidebar-section">
-          <span className="sidebar-label">Local key</span>
-          <strong>{selectedProjectId ? 'Browser stored' : 'Pending'}</strong>
-          <small>Used only for client-side decrypt.</small>
-        </div>
-
-        <div className="sidebar-section key-sync">
-          <span className="sidebar-label">Key Sync</span>
-          <input
-            value={syncPhrase}
-            onChange={(event) => setSyncPhrase(event.target.value)}
-            type="password"
-            placeholder="Sync phrase"
-            aria-label="Project key sync phrase"
-            disabled={!selectedProjectId || isLoading}
-          />
-          <div className="key-sync-actions">
-            <button type="button" onClick={publishProjectKey} disabled={!selectedProjectId || !syncPhrase || isLoading}>
-              Publish
+        <div className="sidebar-projects">
+          <span className="sidebar-label">Projects</span>
+          <div className="project-view-toggle" role="tablist" aria-label="Project status">
+            <button type="button" role="tab" aria-selected={!showArchivedProjects} className={!showArchivedProjects ? 'active' : ''} onClick={() => setShowArchivedProjects(false)}>
+              Active
             </button>
-            <button type="button" onClick={restoreProjectKey} disabled={!selectedProjectId || !syncPhrase || isLoading}>
-              Restore
+            <button type="button" role="tab" aria-selected={showArchivedProjects} className={showArchivedProjects ? 'active' : ''} onClick={() => setShowArchivedProjects(true)}>
+              Archived
             </button>
           </div>
-        </div>
 
-        <div className="sidebar-section">
-          <span className="sidebar-label">Import</span>
-          <strong>{importPreview ? importPreview.fileName : 'No file staged'}</strong>
-          <small>{importCounts ? `${importCounts.selected} selected` : 'Drop or choose a .env file.'}</small>
-        </div>
-      </aside>
-
-      <section className="workspace" id="workspace">
-        <header className="topbar">
-          <div>
-            <p className="eyebrow">{selectedProject?.name || 'envvault workspace'}</p>
-            <h1>Environment Vault</h1>
-            <p className="topbar-note" role="status" aria-live="polite">{status}</p>
-          </div>
-          <div className="topbar-actions">
-            {user ? (
-              <>
-                <div className="user-chip">
-                  {user.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <CircleUserRound size={18} />}
-                  <span>{user.name}</span>
-                </div>
-                <button className="icon-action" onClick={logout} aria-label="Sign out" title="Sign out" disabled={isLoading}>
-                  <LogOut size={18} />
-                </button>
-              </>
-            ) : (
-              <>
-                {authProviders.github ? (
-                  <button className="primary-action" onClick={githubLogin} disabled={isLoading}>
-                    <Github size={18} />
-                    GitHub
-                  </button>
-                ) : null}
-                {authProviders.google ? (
-                  <button className="primary-action" onClick={googleLogin} disabled={isLoading}>
-                    <CircleUserRound size={18} />
-                    Google
-                  </button>
-                ) : null}
-                <button className="icon-action" onClick={devLogin} aria-label="Development login" title="Development login" disabled={isLoading}>
-                  <KeyRound size={18} />
-                </button>
-              </>
-            )}
-            <button className="icon-action" onClick={refreshActiveData} aria-label="Refresh workspace" disabled={!user || isLoading}>
-              <RefreshCcw size={18} />
-            </button>
-          </div>
-        </header>
-
-        <section className="metric-grid" aria-label="Project summary">
-          {metrics.map((metric) => (
-            <Metric key={metric.label} icon={metric.icon} label={metric.label} value={metric.value} />
-          ))}
-        </section>
-
-        {cliSetupCommand ? (
-          <section className="cli-strip" aria-label="CLI setup">
-            <div>
-              <span>CLI setup</span>
-              <code title={cliSetupCommand}>{cliSetupCommand}</code>
-            </div>
-            <button className="icon-action" type="button" onClick={copyCliSetupCommand} aria-label="Copy CLI setup command" title="Copy command">
-              <Copy size={17} />
-            </button>
-          </section>
-        ) : null}
-
-        <section className="content-grid">
-          <Panel
-            title="Projects"
-            subtitle="Create and select a Mongo-backed project."
-            action={
-              <div className="panel-actions lifecycle-actions">
-                <button className="icon-action" type="button" onClick={renameProject} aria-label="Rename project" title="Rename project" disabled={!selectedProject || !canManageMembers || isLoading}>
-                  <Edit3 size={16} />
-                </button>
-                {showArchivedProjects ? (
-                  <button className="icon-action" type="button" onClick={restoreProject} aria-label="Restore project" title="Restore project" disabled={!selectedProject || !canManageMembers || isLoading}>
-                    <ArchiveRestore size={16} />
-                  </button>
-                ) : (
-                  <button className="icon-action" type="button" onClick={archiveProject} aria-label="Archive project" title="Archive project" disabled={!selectedProject || !canManageMembers || isLoading}>
-                    <Archive size={16} />
-                  </button>
-                )}
-                <button className="icon-action danger" type="button" onClick={deleteProject} aria-label="Delete project" title="Delete project" disabled={!selectedProject || !canManageMembers || isLoading}>
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            }
-          >
-            <div className="project-view-toggle" role="tablist" aria-label="Project status">
-              <button type="button" role="tab" aria-selected={!showArchivedProjects} className={!showArchivedProjects ? 'active' : ''} onClick={() => setShowArchivedProjects(false)}>
-                Active
-              </button>
-              <button type="button" role="tab" aria-selected={showArchivedProjects} className={showArchivedProjects ? 'active' : ''} onClick={() => setShowArchivedProjects(true)}>
-                Archived
-              </button>
-            </div>
-            {!showArchivedProjects ? <form className="inline-form project-create-form" onSubmit={createProject}>
+          {!showArchivedProjects && hasProjects ? (
+            <form className="inline-form project-create-form" onSubmit={createProject}>
               <input
                 value={projectName}
                 onChange={(event) => setProjectName(event.target.value)}
-                placeholder="Project name"
+                placeholder="New project name"
                 aria-label="Project name"
-                disabled={!user || isLoading}
+                disabled={isLoading}
               />
               <label className={`icon-action file-icon-action ${projectEnvFile ? 'attached' : ''}`} aria-label="Attach env file" title={projectEnvFile ? projectEnvFile.name : 'Attach .env file'}>
                 <FileUp size={17} />
@@ -1089,389 +1312,835 @@ function App() {
                   type="file"
                   accept=".env,.txt"
                   onChange={(event) => setProjectEnvFile(event.target.files?.[0] || null)}
-                  disabled={!user || isLoading}
+                  disabled={isLoading}
                 />
               </label>
-              <button className="icon-action" type="submit" aria-label="Create project" disabled={!user || isLoading}>
-                <Plus size={18} />
-              </button>
-            </form> : null}
-            {projectEnvFile ? (
-              <div className="attached-file">
-                <FileUp size={14} />
-                <span>{projectEnvFile.name}</span>
-                <button type="button" onClick={() => setProjectEnvFile(null)} aria-label="Remove attached env file">
-                  <X size={14} />
-                </button>
-              </div>
-            ) : null}
-            <div className="stack-list">
-              {projects.length === 0 ? (
-                <div className="empty-state">{user ? (showArchivedProjects ? 'No archived projects.' : 'No projects yet.') : 'Log in first.'}</div>
-              ) : (
-                projects.map((project) => (
-                  <button
-                    className={`select-row ${project.id === selectedProjectId ? 'active' : ''}`}
-                    key={project.id}
-                    onClick={() => setSelectedProjectId(project.id)}
-                    type="button"
-                  >
-                    <div>
-                      <strong>{project.name}</strong>
-                      <span>{project.archivedAt ? 'Archived' : 'Active project'}</span>
-                    </div>
-                    <small>{project.members?.length || 0} member{project.members?.length === 1 ? '' : 's'}</small>
-                  </button>
-                ))
-              )}
-            </div>
-          </Panel>
-
-          <Panel
-            title="Environments"
-            subtitle={selectedProject ? `Branch-shaped secret sets for ${selectedProject.name}.` : 'Select a project first.'}
-            action={
-              <div className="panel-actions lifecycle-actions">
-                <button className="icon-action" type="button" onClick={renameEnvironment} aria-label="Rename environment" title="Rename environment" disabled={!selectedEnvironment || isLoading}>
-                  <Edit3 size={16} />
-                </button>
-                <button className="icon-action" type="button" onClick={cloneEnvironment} aria-label="Clone environment" title="Clone environment" disabled={!selectedEnvironment || isLoading}>
-                  <CopyPlus size={16} />
-                </button>
-                <button className="icon-action" onClick={runCompare} aria-label="Compare environments" title="Compare environments" disabled={!selectedProject || !compareFromId || !compareToId || isLoading}>
-                  <GitCompareArrows size={16} />
-                </button>
-                <button className="icon-action danger" type="button" onClick={deleteEnvironment} aria-label="Delete environment" title="Delete environment" disabled={!selectedEnvironment || isLoading}>
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            }
-          >
-            <form className="inline-form" onSubmit={createEnvironment}>
-              <input
-                value={environmentName}
-                onChange={(event) => setEnvironmentName(event.target.value)}
-                placeholder="Environment name"
-                aria-label="Environment name"
-                disabled={!selectedProject || isLoading}
-              />
-              <button className="icon-action" type="submit" aria-label="Create environment" disabled={!selectedProject || isLoading}>
+              <button className="icon-action" type="submit" aria-label="Create project" disabled={isLoading}>
                 <Plus size={18} />
               </button>
             </form>
-            <div className="stack-list">
-              {environments.length === 0 ? (
-                <div className="empty-state">{selectedProject ? 'No environments yet.' : 'Select a project first.'}</div>
-              ) : (
-                environments.map((environment) => (
-                  <button
-                    className={`select-row ${environment.id === selectedEnvironmentId ? 'active' : ''} ${
-                      environment.name.toLowerCase() === 'production' ? 'production' : ''
-                    }`}
-                    key={environment.id}
-                    onClick={() => setSelectedEnvironmentId(environment.id)}
-                    type="button"
-                  >
-                    <div>
-                      <strong>{environment.name}</strong>
-                      <span>{environment.id}</span>
-                    </div>
-                    <small>{environment.id === selectedEnvironmentId ? 'Selected' : 'Open'}</small>
-                  </button>
-                ))
-              )}
-            </div>
-          </Panel>
-        </section>
-
-        <section className="content-grid collaboration-grid">
-          <Panel
-            title="Team Access"
-            subtitle={canManageMembers ? 'Invite teammates and manage project ownership.' : 'People with access to this project.'}
-            action={<span className="success-badge">{members.length} total</span>}
-          >
-            {canManageMembers ? (
-              <form className="invite-form" onSubmit={inviteMember}>
-                <input
-                  value={inviteEmail}
-                  onChange={(event) => setInviteEmail(event.target.value)}
-                  type="email"
-                  placeholder="teammate@example.com"
-                  aria-label="Teammate email"
-                  disabled={isLoading}
-                />
-                <input
-                  value={invitePhrase}
-                  onChange={(event) => setInvitePhrase(event.target.value)}
-                  type="password"
-                  placeholder="Shared key phrase (optional)"
-                  aria-label="Shared key phrase"
-                  disabled={isLoading}
-                />
-                <button className="icon-action" type="submit" aria-label="Invite member" disabled={!inviteEmail.trim() || isLoading}>
-                  <UserPlus size={18} />
-                </button>
-              </form>
-            ) : null}
-
-            {keyRequests.length ? (
-              <div className="key-request-list">
-                {keyRequests.map((request) => (
-                  <div className="key-request-row" key={request.id}>
-                    <KeyRound size={17} />
-                    <div>
-                      <strong>{request.deviceName}</strong>
-                      <span>{request.user?.name || request.user?.email || 'Project member'} requests key access</span>
-                    </div>
-                    <button className="primary-action" type="button" onClick={() => approveKeyRequest(request)} disabled={isLoading}>
-                      Approve
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-
-            <div className="member-list">
-              {members.map((member) => (
-                <div className="member-row" key={member.id}>
-                  <div className="member-avatar">
-                    {member.avatarUrl ? <img src={member.avatarUrl} alt="" /> : (member.name || member.email || '?').charAt(0).toUpperCase()}
-                  </div>
-                  <div className="member-identity">
-                    <strong>{member.name || member.email}</strong>
-                    <span>{member.name ? member.email : member.status === 'invited' ? 'Awaiting GitHub sign-in' : 'Project member'}</span>
-                  </div>
-                  <span className={`member-status ${member.status}`}>{member.role === 'owner' ? 'owner' : member.status}</span>
-                  {canManageMembers && member.role !== 'owner' ? (
-                    <div className="row-actions">
-                      {member.status === 'joined' ? (
-                        <button className="icon-action" type="button" onClick={() => transferOwnership(member)} aria-label={`Make ${member.name || member.email} owner`}>
-                          <Crown size={16} />
-                        </button>
-                      ) : null}
-                      <button className="icon-action danger" type="button" onClick={() => removeMember(member)} aria-label={`Remove ${member.name || member.email}`}>
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          </Panel>
-
-          <Panel title="Activity" subtitle="Recent project changes with actor and timestamp." action={<Activity size={18} />}>
-            <div className="activity-list">
-              {activity.length ? activity.slice(0, 12).map((entry) => (
-                <div className="activity-row" key={entry.id}>
-                  <span className="activity-dot" />
-                  <div>
-                    <strong>{formatActivity(entry)}</strong>
-                    <span>{entry.actorId?.name || entry.actorId?.email || 'Unknown user'} · {formatRelativeTime(entry.createdAt)}</span>
-                  </div>
-                </div>
-              )) : <div className="empty-state">No activity recorded yet.</div>}
-            </div>
-          </Panel>
-        </section>
-
-        <section className="content-grid single-row">
-          <Panel
-            title="Environment Diff"
-            subtitle="Compare key presence and keyed value fingerprints without revealing plaintext."
-            action={compareCounts ? <span className="success-badge">{compareCounts.changed + compareCounts.added + compareCounts.removed} drift</span> : null}
-          >
-            <div className="compare-toolbar">
-              <label>
-                <span>From</span>
-                <select value={compareFromId} onChange={(event) => setCompareFromId(event.target.value)} disabled={environments.length < 1}>
-                  {environments.map((environment) => (
-                    <option key={environment.id} value={environment.id}>
-                      {environment.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span>To</span>
-                <select value={compareToId} onChange={(event) => setCompareToId(event.target.value)} disabled={environments.length < 1}>
-                  {environments.map((environment) => (
-                    <option key={environment.id} value={environment.id}>
-                      {environment.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button className="primary-action" type="button" onClick={runCompare} disabled={!selectedProject || !compareFromId || !compareToId || isLoading}>
-                <GitCompareArrows size={18} />
-                Compare
+          ) : null}
+          {projectEnvFile && hasProjects && !showArchivedProjects ? (
+            <div className="attached-file">
+              <FileUp size={14} />
+              <span>{projectEnvFile.name}</span>
+              <button type="button" onClick={() => setProjectEnvFile(null)} aria-label="Remove attached env file">
+                <X size={14} />
               </button>
             </div>
+          ) : null}
 
-            {compareResult ? (
-              <div className="diff-grid">
-                <DiffColumn title="Added" tone="added" keys={compareResult.diff.added} />
-                <DiffColumn title="Removed" tone="removed" keys={compareResult.diff.removed} />
-                <DiffColumn title="Changed" tone="changed" keys={compareResult.diff.changed} />
-                <DiffColumn title="Same" tone="same" keys={compareResult.diff.unchanged} />
+          <nav className="stack-list project-nav" aria-label="Project list">
+            {loadingProjects && projects.length === 0 ? (
+              <div className="skeleton-list" aria-hidden="true">
+                <div className="skeleton-row" />
+                <div className="skeleton-row" />
+                <div className="skeleton-row" />
               </div>
+            ) : projects.length === 0 ? (
+              <div className="empty-state">{showArchivedProjects ? 'No archived projects.' : 'No projects yet — create one to get started.'}</div>
             ) : (
-              <div className="empty-state">
-                {environments.length > 1 ? 'Select two environments and run compare.' : 'Create at least two environments to compare drift.'}
-              </div>
-            )}
-          </Panel>
-        </section>
-
-        <section className="content-grid single-row">
-          <Panel
-            title="Variables"
-            subtitle={
-              selectedEnvironment
-                ? `Values are encrypted locally before saving to ${selectedEnvironment.name}.`
-                : 'Select an environment first.'
-            }
-            action={
-              <div className="panel-actions">
-                {isProduction ? <span className="danger-badge">production guard</span> : <span className="success-badge">masked by default</span>}
-                <button className="icon-action" type="button" onClick={exportEnvironment} aria-label="Export environment" disabled={!variables.length}>
-                  <Download size={16} />
-                </button>
-              </div>
-            }
-          >
-            <div
-              className="drop-zone"
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => {
-                event.preventDefault();
-                handleEnvFile(event.dataTransfer.files?.[0]);
-              }}
-            >
-              <FileUp size={18} />
-              <div>
-                <strong>Import .env</strong>
-                <span>.env.production creates/selects production, .env.staging selects staging.</span>
-              </div>
-              <label className="file-button">
-                Choose
-                <input
-                  type="file"
-                  accept=".env,.txt"
-                  onChange={(event) => handleEnvFile(event.target.files?.[0])}
-                  disabled={!selectedProject || isLoading}
-                />
-              </label>
-            </div>
-
-            {importPreview ? (
-              <div className="import-preview">
-                <div className="import-summary">
+              projects.map((project) => (
+                <button
+                  className={`select-row ${project.id === selectedProjectId ? 'active' : ''}`}
+                  key={project.id}
+                  onClick={() => setSelectedProjectId(project.id)}
+                  type="button"
+                >
                   <div>
-                    <strong>{importPreview.fileName}</strong>
+                    <strong>{project.name}</strong>
                     <span>
-                      {importCounts.new} new · {importCounts.update} update · {importCounts.skip} skipped
+                      {project.members?.length || 0} member{project.members?.length === 1 ? '' : 's'}
+                      {project.archivedAt ? ' · archived' : ''}
                     </span>
                   </div>
-                  <div className="import-actions">
-                    <button className="primary-action" type="button" onClick={runImport} disabled={isLoading}>
-                      <Upload size={16} />
-                      Import {importCounts.selected}
-                    </button>
-                    <button className="icon-action" type="button" onClick={clearImportPreview} aria-label="Clear import preview">
-                      <X size={16} />
-                    </button>
-                  </div>
-                </div>
-                <div className="import-list">
-                  {importPreview.entries.map((entry) => (
-                    <button
-                      className={`import-row ${entry.selected ? '' : 'skipped'}`}
-                      key={entry.id}
-                      type="button"
-                      onClick={() => toggleImportEntry(entry.id)}
-                    >
-                      <code>{entry.key}</code>
-                      <span>{entry.value ? 'value detected' : 'empty value'}</span>
-                      <small>{entry.mode}</small>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="variable-toolbar">
-              <Search size={17} aria-hidden="true" />
-              <input
-                value={variableSearch}
-                onChange={(event) => setVariableSearch(event.target.value)}
-                type="search"
-                placeholder="Filter variable keys"
-                aria-label="Filter variable keys"
-                disabled={!selectedEnvironment}
-              />
-              <span>{filteredVariables.length} of {variables.length}</span>
-              {variableSearch ? (
-                <button className="icon-action" type="button" onClick={() => setVariableSearch('')} aria-label="Clear variable search" title="Clear search">
-                  <X size={16} />
                 </button>
+              ))
+            )}
+          </nav>
+        </div>
+
+        <div className="sidebar-footer">
+          <div className="user-chip">
+            {user.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <CircleUserRound size={18} />}
+            <span>{user.name}</span>
+          </div>
+          <button
+            className="icon-action"
+            type="button"
+            onClick={toggleTheme}
+            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+          </button>
+          <button className="icon-action" onClick={logout} aria-label="Sign out" title="Sign out" disabled={isLoading}>
+            <LogOut size={18} />
+          </button>
+        </div>
+      </aside>
+
+      <section className="workspace" id="workspace">
+        {!selectedProject ? (
+          <div className="onboarding">
+            {showArchivedProjects ? (
+              <div className="onboarding-card">
+                <div className="onboarding-icon">
+                  <Archive size={22} />
+                </div>
+                <h1>No archived projects</h1>
+                <p>Projects you archive move here. Switch back to your active projects to keep working.</p>
+                <button className="primary-action" type="button" onClick={() => setShowArchivedProjects(false)}>
+                  View active projects
+                </button>
+              </div>
+            ) : (
+              <div className="onboarding-card">
+                <div className="onboarding-icon">
+                  <LockKeyhole size={22} />
+                </div>
+                <h1>Create your first project</h1>
+                <p>
+                  A project groups environments like development, staging and production, each with its own encrypted
+                  variables. Attach a .env file to import your keys right away.
+                </p>
+                <form className="onboarding-form" onSubmit={createProject}>
+                  <input
+                    value={projectName}
+                    onChange={(event) => setProjectName(event.target.value)}
+                    placeholder="e.g. payments-service"
+                    aria-label="Project name"
+                    disabled={isLoading}
+                  />
+                  <button className="primary-action" type="submit" disabled={isLoading}>
+                    <Plus size={17} />
+                    Create project
+                  </button>
+                </form>
+                <label className="attach-env-button">
+                  <FileUp size={15} />
+                  <span>{projectEnvFile ? projectEnvFile.name : 'Optional: attach a .env file to import'}</span>
+                  <input
+                    key={projectEnvFile ? `${projectEnvFile.name}:${projectEnvFile.lastModified}` : 'empty'}
+                    type="file"
+                    accept=".env,.txt"
+                    onChange={(event) => setProjectEnvFile(event.target.files?.[0] || null)}
+                    disabled={isLoading}
+                  />
+                </label>
+                {projectEnvFile ? (
+                  <button className="clear-attach" type="button" onClick={() => setProjectEnvFile(null)}>
+                    <X size={13} />
+                    Remove file
+                  </button>
+                ) : null}
+                <ol className="onboarding-steps">
+                  <li>Create a project</li>
+                  <li>Add an environment</li>
+                  <li>Add or import encrypted variables</li>
+                </ol>
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            <header className="project-header">
+              <div className="project-title">
+                <h1>{selectedProject.name}</h1>
+                <p>
+                  {selectedProject.archivedAt ? 'Archived · ' : ''}
+                  {environments.length} environment{environments.length === 1 ? '' : 's'} · {members.length} member{members.length === 1 ? '' : 's'}
+                </p>
+              </div>
+              <div className="project-header-actions">
+                <button className="icon-action" type="button" onClick={renameProject} aria-label="Rename project" title="Rename project" disabled={!canManageMembers || isLoading}>
+                  <Edit3 size={16} />
+                </button>
+                {showArchivedProjects ? (
+                  <button className="icon-action" type="button" onClick={restoreProject} aria-label="Restore project" title="Restore project" disabled={!canManageMembers || isLoading}>
+                    <ArchiveRestore size={16} />
+                  </button>
+                ) : (
+                  <button className="icon-action" type="button" onClick={archiveProject} aria-label="Archive project" title="Archive project" disabled={!canManageMembers || isLoading}>
+                    <Archive size={16} />
+                  </button>
+                )}
+                <button className="icon-action danger" type="button" onClick={deleteProject} aria-label="Delete project" title="Delete project" disabled={!canManageMembers || isLoading}>
+                  <Trash2 size={16} />
+                </button>
+                <button className="icon-action" onClick={refreshActiveData} aria-label="Refresh workspace" title="Refresh" disabled={isLoading}>
+                  <RefreshCcw size={16} />
+                </button>
+              </div>
+            </header>
+
+            <div className="env-bar">
+              <div className="env-chips" role="tablist" aria-label="Environments">
+                {loadingEnvironments && environments.length === 0 ? (
+                  <>
+                    <span className="skeleton-chip" aria-hidden="true" />
+                    <span className="skeleton-chip" aria-hidden="true" />
+                  </>
+                ) : null}
+                {environments.map((environment) => (
+                  <button
+                    key={environment.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={environment.id === selectedEnvironmentId}
+                    className={`env-chip ${environment.id === selectedEnvironmentId ? 'active' : ''} ${
+                      environment.name.toLowerCase() === 'production' ? 'production' : ''
+                    }`}
+                    onClick={() => setSelectedEnvironmentId(environment.id)}
+                  >
+                    {environment.name}
+                  </button>
+                ))}
+                {showEnvForm || environments.length === 0 ? (
+                  <form
+                    className="env-create"
+                    onSubmit={(event) => {
+                      createEnvironment(event);
+                      setShowEnvForm(false);
+                    }}
+                  >
+                    <input
+                      autoFocus
+                      value={environmentName}
+                      onChange={(event) => setEnvironmentName(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape') setShowEnvForm(false);
+                      }}
+                      placeholder={environments.length ? 'Environment name' : 'e.g. development'}
+                      aria-label="Environment name"
+                      disabled={isLoading}
+                    />
+                    <button className="icon-action" type="submit" aria-label="Create environment" disabled={isLoading}>
+                      <Plus size={16} />
+                    </button>
+                  </form>
+                ) : (
+                  <button type="button" className="env-chip env-add" onClick={() => setShowEnvForm(true)}>
+                    <Plus size={14} />
+                    Add
+                  </button>
+                )}
+              </div>
+              {selectedEnvironment ? (
+                <div className="env-actions">
+                  <button className="icon-action" type="button" onClick={renameEnvironment} aria-label="Rename environment" title={`Rename ${selectedEnvironment.name}`} disabled={isLoading}>
+                    <Edit3 size={15} />
+                  </button>
+                  <button className="icon-action" type="button" onClick={cloneEnvironment} aria-label="Clone environment" title={`Clone ${selectedEnvironment.name}`} disabled={isLoading}>
+                    <CopyPlus size={15} />
+                  </button>
+                  <button className="icon-action danger" type="button" onClick={deleteEnvironment} aria-label="Delete environment" title={`Delete ${selectedEnvironment.name}`} disabled={isLoading}>
+                    <Trash2 size={15} />
+                  </button>
+                </div>
               ) : null}
             </div>
 
-            <form className="secret-form" onSubmit={createVariable}>
-              <input
-                value={variableKey}
-                onChange={(event) => setVariableKey(event.target.value)}
-                placeholder="KEY_NAME"
-                aria-label="Variable key"
-                disabled={!selectedEnvironment || isLoading}
-              />
-              <input
-                value={variableValue}
-                onChange={(event) => setVariableValue(event.target.value)}
-                placeholder="Secret value"
-                type="password"
-                aria-label="Variable secret value"
-                disabled={!selectedEnvironment || isLoading}
-              />
-              <button className="primary-action" type="submit" disabled={!selectedEnvironment || isLoading}>
-                <LockKeyhole size={18} />
-                Encrypt
-              </button>
-            </form>
-
-            <div className="variable-list">
-              {variables.length === 0 ? (
-                <div className="empty-state">
-                  {selectedEnvironment ? 'No variables in this environment yet.' : 'Select an environment first.'}
+            {showChecklist ? (
+              <div className="onboarding-checklist">
+                <div className="checklist-items">
+                  {checklistItems.map((item) => (
+                    <button
+                      key={item.label}
+                      type="button"
+                      className={item.done ? 'done' : ''}
+                      onClick={item.onClick}
+                      disabled={item.done}
+                    >
+                      <span className="checklist-mark">{item.done ? <Check size={11} /> : null}</span>
+                      {item.label}
+                    </button>
+                  ))}
                 </div>
-              ) : filteredVariables.length === 0 ? (
-                <div className="empty-state">No variable keys match “{variableSearch}”.</div>
-              ) : (
-                filteredVariables.map((variable) => (
-                  <VariableRow
-                    key={variable.id}
-                    variable={variable}
-                    isEditing={editingId === variable.id}
-                    editKey={editKey}
-                    editValue={editValue}
-                    revealedValue={revealedValues[variable.id]}
-                    isLoading={isLoading}
-                    onStartEdit={startEdit}
-                    onCancelEdit={cancelEdit}
-                    onSave={saveVariable}
-                    onDelete={deleteVariable}
-                    onToggleReveal={toggleReveal}
-                    onCopy={copyVariable}
-                    onEditKeyChange={setEditKey}
-                    onEditValueChange={setEditValue}
-                  />
-                ))
-              )}
-            </div>
-          </Panel>
-        </section>
+                <button className="icon-action" type="button" onClick={dismissChecklist} aria-label="Dismiss checklist" title="Dismiss">
+                  <X size={15} />
+                </button>
+              </div>
+            ) : null}
+
+            {showKeyBanner ? (
+              <div className="key-banner">
+                <TriangleAlert size={16} />
+                <span>Your project key only exists in this browser. Back it up with a sync phrase so you cannot lose access to your secrets.</span>
+                <button className="primary-action" type="button" onClick={() => setActiveTab('setup')}>
+                  Back up key
+                </button>
+              </div>
+            ) : null}
+
+            <nav className="tab-nav" role="tablist" aria-label="Project sections">
+              <button type="button" role="tab" aria-selected={activeTab === 'variables'} className={activeTab === 'variables' ? 'active' : ''} onClick={() => setActiveTab('variables')}>
+                <LockKeyhole size={15} />
+                Variables
+                {variables.length ? <small>{variables.length}</small> : null}
+              </button>
+              <button type="button" role="tab" aria-selected={activeTab === 'compare'} className={activeTab === 'compare' ? 'active' : ''} onClick={() => setActiveTab('compare')}>
+                <GitCompareArrows size={15} />
+                Compare
+              </button>
+              <button type="button" role="tab" aria-selected={activeTab === 'team'} className={activeTab === 'team' ? 'active' : ''} onClick={() => setActiveTab('team')}>
+                <UsersRound size={15} />
+                Team
+                {members.length ? <small>{members.length}</small> : null}
+                {keyRequests.length ? <em className="tab-alert">{keyRequests.length}</em> : null}
+              </button>
+              <button type="button" role="tab" aria-selected={activeTab === 'activity'} className={activeTab === 'activity' ? 'active' : ''} onClick={() => setActiveTab('activity')}>
+                <Activity size={15} />
+                Activity
+              </button>
+              <button type="button" role="tab" aria-selected={activeTab === 'setup'} className={activeTab === 'setup' ? 'active' : ''} onClick={() => setActiveTab('setup')}>
+                <KeyRound size={15} />
+                CLI &amp; Keys
+              </button>
+            </nav>
+
+            {activeTab === 'variables' ? (
+              <div className="tab-panel">
+                {!selectedEnvironment ? (
+                  <div className="empty-state">Add an environment above, then add or import variables here.</div>
+                ) : (
+                  <>
+                    <div className="tab-panel-head">
+                      <p>
+                        New values are encrypted in your browser before they are saved to <strong>{selectedEnvironment.name}</strong>.
+                      </p>
+                      <div className="panel-actions">
+                        {isProduction ? <span className="danger-badge">production guard</span> : <span className="success-badge">masked by default</span>}
+                        <button className="icon-action" type="button" onClick={exportEnvironment} aria-label="Export environment as .env file" title="Download .env" disabled={!variables.length}>
+                          <Download size={16} />
+                        </button>
+                      </div>
+                    </div>
+
+                    <form className={`secret-form ${variableValueMultiline ? 'multiline' : ''}`} onSubmit={createVariable}>
+                      <input
+                        value={variableKey}
+                        onChange={(event) => setVariableKey(event.target.value)}
+                        placeholder="KEY_NAME"
+                        aria-label="Variable key"
+                        disabled={isLoading}
+                      />
+                      {variableValueMultiline ? (
+                        <textarea
+                          value={variableValue}
+                          onChange={(event) => setVariableValue(event.target.value)}
+                          placeholder={'-----BEGIN PRIVATE KEY-----\npaste multiline values here'}
+                          rows={4}
+                          aria-label="Variable secret value"
+                          disabled={isLoading}
+                        />
+                      ) : (
+                        <input
+                          value={variableValue}
+                          onChange={(event) => setVariableValue(event.target.value)}
+                          placeholder="Secret value"
+                          type="password"
+                          aria-label="Variable secret value"
+                          disabled={isLoading}
+                        />
+                      )}
+                      <div className="secret-form-actions">
+                        <button
+                          className="icon-action"
+                          type="button"
+                          onClick={() => setVariableValueMultiline((current) => !current)}
+                          aria-pressed={variableValueMultiline}
+                          aria-label="Toggle multiline value"
+                          title={variableValueMultiline ? 'Single-line value' : 'Multiline value'}
+                        >
+                          <WrapText size={16} />
+                        </button>
+                        <button className="primary-action" type="submit" disabled={isLoading}>
+                          <LockKeyhole size={17} />
+                          Add variable
+                        </button>
+                      </div>
+                    </form>
+
+                    {variables.length ? (
+                      <div className="variable-toolbar">
+                        <Search size={17} aria-hidden="true" />
+                        <input
+                          value={variableSearch}
+                          onChange={(event) => setVariableSearch(event.target.value)}
+                          type="search"
+                          placeholder="Filter variable keys"
+                          aria-label="Filter variable keys"
+                        />
+                        <span>{filteredVariables.length} of {variables.length}</span>
+                        {variableSearch ? (
+                          <button className="icon-action" type="button" onClick={() => setVariableSearch('')} aria-label="Clear variable search" title="Clear search">
+                            <X size={16} />
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    <div className="variable-list">
+                      {loadingVariables && variables.length === 0 ? (
+                        <div className="skeleton-list" aria-hidden="true">
+                          <div className="skeleton-row" />
+                          <div className="skeleton-row" />
+                          <div className="skeleton-row" />
+                        </div>
+                      ) : variables.length === 0 ? (
+                        <div className="empty-state">No variables yet. Add one above or import a .env file below.</div>
+                      ) : filteredVariables.length === 0 ? (
+                        <div className="empty-state">No variable keys match “{variableSearch}”.</div>
+                      ) : (
+                        filteredVariables.map((variable) => (
+                          <VariableRow
+                            key={variable.id}
+                            variable={variable}
+                            isEditing={editingId === variable.id}
+                            editKey={editKey}
+                            editValue={editValue}
+                            revealedValue={revealedValues[variable.id]}
+                            isCopied={copiedId === variable.id}
+                            isLoading={isLoading}
+                            onStartEdit={startEdit}
+                            onCancelEdit={cancelEdit}
+                            onSave={saveVariable}
+                            onDelete={deleteVariable}
+                            onToggleReveal={toggleReveal}
+                            onCopy={copyVariable}
+                            onEditKeyChange={setEditKey}
+                            onEditValueChange={setEditValue}
+                          />
+                        ))
+                      )}
+                    </div>
+
+                    <div
+                      className="drop-zone"
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        handleEnvFile(event.dataTransfer.files?.[0]);
+                      }}
+                    >
+                      <FileUp size={18} />
+                      <div>
+                        <strong>Import a .env file</strong>
+                        <span>Drop a file here, choose one, or paste its contents. Files named .env.production or .env.staging target that environment automatically.</span>
+                      </div>
+                      <div className="drop-zone-buttons">
+                        <label className="file-button">
+                          Choose file
+                          <input
+                            type="file"
+                            accept=".env,.txt"
+                            onChange={(event) => handleEnvFile(event.target.files?.[0])}
+                            disabled={isLoading}
+                          />
+                        </label>
+                        <button className="file-button" type="button" onClick={() => setShowPasteArea((current) => !current)}>
+                          <ClipboardPaste size={15} />
+                          Paste
+                        </button>
+                      </div>
+                    </div>
+
+                    {showPasteArea ? (
+                      <form className="paste-zone" onSubmit={importPastedEnv}>
+                        <textarea
+                          autoFocus
+                          value={pasteText}
+                          onChange={(event) => setPasteText(event.target.value)}
+                          placeholder={'DATABASE_URL=postgres://user:pass@host:5432/db\nREDIS_URL=redis://localhost:6379'}
+                          rows={6}
+                          aria-label="Paste .env contents"
+                          disabled={isLoading}
+                        />
+                        <div className="paste-actions">
+                          <button className="primary-action" type="submit" disabled={!pasteText.trim() || isLoading}>
+                            <ClipboardPaste size={16} />
+                            Preview import
+                          </button>
+                          <button
+                            className="ghost-action"
+                            type="button"
+                            onClick={() => {
+                              setShowPasteArea(false);
+                              setPasteText('');
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    ) : null}
+
+                    {importPreview ? (
+                      <div className="import-preview">
+                        <div className="import-summary">
+                          <div>
+                            <strong>{importPreview.fileName}</strong>
+                            <span>
+                              {importCounts.new} new · {importCounts.update} update · {importCounts.skip} skipped — click a row to include or skip it
+                            </span>
+                          </div>
+                          <div className="import-actions">
+                            <button className="primary-action" type="button" onClick={runImport} disabled={isLoading}>
+                              <Upload size={16} />
+                              Import {importCounts.selected}
+                            </button>
+                            <button className="icon-action" type="button" onClick={clearImportPreview} aria-label="Clear import preview">
+                              <X size={16} />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="import-list">
+                          {importPreview.entries.map((entry) => (
+                            <button
+                              className={`import-row ${entry.selected ? '' : 'skipped'}`}
+                              key={entry.id}
+                              type="button"
+                              onClick={() => toggleImportEntry(entry.id)}
+                            >
+                              <code>{entry.key}</code>
+                              <span>{entry.value ? 'value detected' : 'empty value'}</span>
+                              <small>{entry.mode}</small>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            ) : null}
+
+            {activeTab === 'compare' ? (
+              <div className="tab-panel">
+                <div className="tab-panel-head">
+                  <p>Compare which keys exist and whether values differ between two environments — using fingerprints, never plaintext.</p>
+                  {compareCounts ? <span className="success-badge">{compareCounts.changed + compareCounts.added + compareCounts.removed} drift</span> : null}
+                </div>
+                {environments.length < 2 ? (
+                  <div className="empty-state">Create at least two environments to compare drift.</div>
+                ) : (
+                  <>
+                    <div className="compare-toolbar">
+                      <div className="compare-field">
+                        <span>From</span>
+                        <SelectField
+                          label="Compare from environment"
+                          value={compareFromId}
+                          onChange={setCompareFromId}
+                          options={environments.map((environment) => ({ value: environment.id, label: environment.name }))}
+                        />
+                      </div>
+                      <div className="compare-field">
+                        <span>To</span>
+                        <SelectField
+                          label="Compare to environment"
+                          value={compareToId}
+                          onChange={setCompareToId}
+                          options={environments.map((environment) => ({ value: environment.id, label: environment.name }))}
+                        />
+                      </div>
+                      <button className="primary-action" type="button" onClick={runCompare} disabled={!compareFromId || !compareToId || isLoading}>
+                        <GitCompareArrows size={18} />
+                        Compare
+                      </button>
+                    </div>
+                    {compareResult && compareResult.diff.removed.length ? (
+                      <div className="drift-banner">
+                        <div>
+                          <strong>
+                            {compareResult.diff.removed.length} key{compareResult.diff.removed.length === 1 ? '' : 's'} in {compareResult.from.name} missing from {compareResult.to.name}
+                          </strong>
+                          <span>Values are copied encrypted with the same project key.</span>
+                        </div>
+                        <button className="primary-action" type="button" onClick={syncMissingKeys} disabled={isLoading}>
+                          Copy to {compareResult.to.name}
+                        </button>
+                      </div>
+                    ) : null}
+
+                    {compareResult ? (
+                      <div className="diff-grid">
+                        <DiffColumn title="Added" tone="added" keys={compareResult.diff.added} />
+                        <DiffColumn title="Removed" tone="removed" keys={compareResult.diff.removed} />
+                        <DiffColumn title="Changed" tone="changed" keys={compareResult.diff.changed} />
+                        <DiffColumn title="Same" tone="same" keys={compareResult.diff.unchanged} />
+                      </div>
+                    ) : (
+                      <div className="empty-state">Choose two environments and run compare.</div>
+                    )}
+                  </>
+                )}
+              </div>
+            ) : null}
+
+            {activeTab === 'team' ? (
+              <div className="tab-panel">
+                <div className="tab-panel-head">
+                  <p>
+                    {canManageMembers
+                      ? 'Invite teammates by email. Add a shared key phrase so they can decrypt values right away.'
+                      : 'People with access to this project.'}
+                  </p>
+                </div>
+
+                {canManageMembers ? (
+                  <form className="invite-form" onSubmit={inviteMember}>
+                    <input
+                      value={inviteEmail}
+                      onChange={(event) => setInviteEmail(event.target.value)}
+                      type="email"
+                      placeholder="teammate@example.com"
+                      aria-label="Teammate email"
+                      disabled={isLoading}
+                    />
+                    <input
+                      value={invitePhrase}
+                      onChange={(event) => setInvitePhrase(event.target.value)}
+                      type="password"
+                      placeholder="Shared key phrase (optional)"
+                      aria-label="Shared key phrase"
+                      disabled={isLoading}
+                    />
+                    <button className="icon-action" type="submit" aria-label="Invite member" disabled={!inviteEmail.trim() || isLoading}>
+                      <UserPlus size={18} />
+                    </button>
+                  </form>
+                ) : null}
+
+                {keyRequests.length ? (
+                  <div className="key-request-list">
+                    {keyRequests.map((request) => (
+                      <div className="key-request-row" key={request.id}>
+                        <KeyRound size={17} />
+                        <div>
+                          <strong>{request.deviceName}</strong>
+                          <span>{request.user?.name || request.user?.email || 'Project member'} requests key access</span>
+                        </div>
+                        <button className="primary-action" type="button" onClick={() => approveKeyRequest(request)} disabled={isLoading}>
+                          Approve
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div className="member-list">
+                  {loadingCollab && members.length === 0 ? (
+                    <div className="skeleton-list" aria-hidden="true">
+                      <div className="skeleton-row" />
+                      <div className="skeleton-row" />
+                    </div>
+                  ) : null}
+                  {members.map((member) => (
+                    <div className="member-row" key={member.id}>
+                      <div className="member-avatar">
+                        {member.avatarUrl ? <img src={member.avatarUrl} alt="" /> : (member.name || member.email || '?').charAt(0).toUpperCase()}
+                      </div>
+                      <div className="member-identity">
+                        <strong>{member.name || member.email}</strong>
+                        <span>{member.name ? member.email : member.status === 'invited' ? 'Awaiting GitHub sign-in' : 'Project member'}</span>
+                      </div>
+                      <span className={`member-status ${member.status}`}>{member.role === 'owner' ? 'owner' : member.status}</span>
+                      {canManageMembers && member.role !== 'owner' ? (
+                        <div className="row-actions">
+                          {member.status === 'joined' ? (
+                            <button className="icon-action" type="button" onClick={() => transferOwnership(member)} aria-label={`Make ${member.name || member.email} owner`} title="Transfer ownership">
+                              <Crown size={16} />
+                            </button>
+                          ) : null}
+                          <button className="icon-action danger" type="button" onClick={() => removeMember(member)} aria-label={`Remove ${member.name || member.email}`} title="Remove member">
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {activeTab === 'activity' ? (
+              <div className="tab-panel">
+                <div className="tab-panel-head">
+                  <p>Recent project changes with actor and timestamp.</p>
+                </div>
+                <div className="activity-list">
+                  {loadingCollab && activity.length === 0 ? (
+                    <div className="skeleton-list" aria-hidden="true">
+                      <div className="skeleton-row" />
+                      <div className="skeleton-row" />
+                      <div className="skeleton-row" />
+                    </div>
+                  ) : activity.length ? (
+                    activity.slice(0, 12).map((entry) => (
+                      <div className="activity-row" key={entry.id}>
+                        <span className="activity-dot" />
+                        <div>
+                          <strong>{formatActivity(entry)}</strong>
+                          <span>{entry.actorId?.name || entry.actorId?.email || 'Unknown user'} · {formatRelativeTime(entry.createdAt)}</span>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="empty-state">No activity recorded yet.</div>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
+            {activeTab === 'setup' ? (
+              <div className="tab-panel">
+                <div className="tab-panel-head">
+                  <p>Connect the CLI to this project and move your local encryption key between devices.</p>
+                </div>
+
+                <div className="setup-block">
+                  <span className="sidebar-label">1 · Connect the CLI</span>
+                  {cliSetupCommand ? (
+                    <div className="cli-strip">
+                      <div>
+                        <span>Run in your project folder</span>
+                        <code title={cliSetupCommand}>{cliSetupCommand}</code>
+                      </div>
+                      <button className={`icon-action ${copiedId === 'cli' ? 'copied' : ''}`} type="button" onClick={copyCliSetupCommand} aria-label="Copy CLI setup command" title="Copy command">
+                        {copiedId === 'cli' ? <Check size={17} /> : <Copy size={17} />}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="empty-state">Select an environment to generate the setup command.</div>
+                  )}
+                </div>
+
+                <div className="setup-block">
+                  <span className="sidebar-label">2 · Sync your project key</span>
+                  <p className="setup-note">
+                    Your project key lives only in this browser and is used to decrypt values locally. Publish it with
+                    a sync phrase, then use the same phrase to restore it on another device — or share it with an
+                    invited teammate.
+                  </p>
+                  <div className="key-sync">
+                    <input
+                      value={syncPhrase}
+                      onChange={(event) => setSyncPhrase(event.target.value)}
+                      type="password"
+                      placeholder="Sync phrase"
+                      aria-label="Project key sync phrase"
+                      disabled={isLoading}
+                    />
+                    <div className="key-sync-actions">
+                      <button type="button" onClick={publishProjectKey} disabled={!syncPhrase || isLoading}>
+                        Publish key
+                      </button>
+                      <button type="button" onClick={restoreProjectKey} disabled={!syncPhrase || isLoading}>
+                        Restore key
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </>
+        )}
       </section>
+
+      {dialog ? <AppDialog key={`${dialog.kind}:${dialog.title}:${dialog.message}`} dialog={dialog} onClose={closeDialog} /> : null}
+      <p className={`status-toast ${statusTone} ${toastVisible && status ? 'visible' : ''}`} role="status" aria-live="polite">
+        {statusTone === 'error' ? <CircleAlert size={14} /> : null}
+        {statusTone === 'success' ? <CircleCheck size={14} /> : null}
+        <span>{status}</span>
+      </p>
     </main>
+  );
+}
+
+function AppDialog({ dialog, onClose }) {
+  const [inputValue, setInputValue] = useState(dialog.initialValue || '');
+  const formRef = useRef(null);
+  const isConfirm = dialog.kind === 'confirm';
+  const matches = dialog.kind !== 'match' || inputValue.trim() === dialog.expected;
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement;
+    function onKeyDown(event) {
+      if (event.key === 'Escape') {
+        onClose(isConfirm ? false : null);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const nodes = Array.from(formRef.current?.querySelectorAll('button:not(:disabled), input') || []);
+      if (!nodes.length) return;
+      const first = nodes[0];
+      const last = nodes[nodes.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !formRef.current?.contains(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      previouslyFocused?.focus?.();
+    };
+  }, []);
+
+  function submit(event) {
+    event.preventDefault();
+    if (isConfirm) {
+      onClose(true);
+      return;
+    }
+    if (!matches) return;
+    onClose(inputValue);
+  }
+
+  return (
+    <div
+      className="dialog-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose(isConfirm ? false : null);
+      }}
+    >
+      <form className="dialog" role="dialog" aria-modal="true" aria-label={dialog.title} onSubmit={submit} ref={formRef}>
+        {dialog.danger ? (
+          <div className="dialog-icon danger">
+            <TriangleAlert size={19} />
+          </div>
+        ) : null}
+        <h3>{dialog.title}</h3>
+        <p>{dialog.message}</p>
+        {!isConfirm ? (
+          <input
+            autoFocus
+            value={inputValue}
+            onChange={(event) => setInputValue(event.target.value)}
+            placeholder={dialog.placeholder || ''}
+            aria-label={dialog.title}
+          />
+        ) : null}
+        {dialog.kind === 'match' ? (
+          <small className="dialog-hint">
+            Type <code>{dialog.expected}</code> to confirm.
+          </small>
+        ) : null}
+        <div className="dialog-actions">
+          <button type="button" className="ghost-action" onClick={() => onClose(isConfirm ? false : null)}>
+            Cancel
+          </button>
+          <button type="submit" className={`primary-action ${dialog.danger ? 'danger' : ''}`} autoFocus={isConfirm} disabled={!matches}>
+            {dialog.confirmLabel || 'Confirm'}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
 
@@ -1481,6 +2150,7 @@ function VariableRow({
   editKey,
   editValue,
   revealedValue,
+  isCopied,
   isLoading,
   onStartEdit,
   onCancelEdit,
@@ -1495,13 +2165,23 @@ function VariableRow({
     return (
       <div className="variable-row editing">
         <input value={editKey} onChange={(event) => onEditKeyChange(event.target.value)} aria-label="Variable key" />
-        <input
-          value={editValue}
-          onChange={(event) => onEditValueChange(event.target.value)}
-          type="password"
-          placeholder="New value, optional"
-          aria-label="Variable value"
-        />
+        {editValue.includes('\n') ? (
+          <textarea
+            value={editValue}
+            onChange={(event) => onEditValueChange(event.target.value)}
+            rows={3}
+            placeholder="New value, optional"
+            aria-label="Variable value"
+          />
+        ) : (
+          <input
+            value={editValue}
+            onChange={(event) => onEditValueChange(event.target.value)}
+            type="password"
+            placeholder="New value, optional"
+            aria-label="Variable value"
+          />
+        )}
         <small>{new Date(variable.updatedAt).toLocaleString()}</small>
         <div className="row-actions">
           <button className="icon-action" onClick={() => onSave(variable)} type="button" aria-label={`Save ${variable.key}`} disabled={isLoading}>
@@ -1524,8 +2204,8 @@ function VariableRow({
         <button className="icon-action" type="button" onClick={() => onToggleReveal(variable)} aria-label={`${revealedValue ? 'Hide' : 'Reveal'} ${variable.key}`}>
           {revealedValue ? <EyeOff size={16} /> : <Eye size={16} />}
         </button>
-        <button className="icon-action" type="button" onClick={() => onCopy(variable)} aria-label={`Copy ${variable.key}`}>
-          <Copy size={16} />
+        <button className={`icon-action ${isCopied ? 'copied' : ''}`} type="button" onClick={() => onCopy(variable)} aria-label={`Copy ${variable.key}`}>
+          {isCopied ? <Check size={16} /> : <Copy size={16} />}
         </button>
         <button className="icon-action" type="button" onClick={() => onStartEdit(variable)} aria-label={`Edit ${variable.key}`} disabled={isLoading}>
           <Edit3 size={16} />
@@ -1560,27 +2240,62 @@ function DiffColumn({ title, tone, keys }) {
   );
 }
 
-function Panel({ title, subtitle, action, children }) {
-  return (
-    <div className="panel">
-      <div className="panel-head">
-        <div>
-          <h2>{title}</h2>
-          <p>{subtitle}</p>
-        </div>
-        {action}
-      </div>
-      {children}
-    </div>
-  );
-}
+function SelectField({ label, value, options, onChange, disabled }) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef(null);
+  const selected = options.find((option) => option.value === value);
 
-function Metric({ icon, label, value }) {
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event) {
+      if (!containerRef.current?.contains(event.target)) setOpen(false);
+    }
+    function onKeyDown(event) {
+      if (event.key === 'Escape') setOpen(false);
+    }
+    window.addEventListener('mousedown', onPointerDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('mousedown', onPointerDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
   return (
-    <div className="metric-card">
-      <div className="metric-icon">{icon}</div>
-      <span>{label}</span>
-      <strong>{value}</strong>
+    <div className={`select-field ${open ? 'open' : ''}`} ref={containerRef}>
+      <button
+        type="button"
+        className="select-trigger"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={label}
+        disabled={disabled}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span>{selected?.label || 'Select…'}</span>
+        <ChevronDown size={15} />
+      </button>
+      {open ? (
+        <ul className="select-menu" role="listbox" aria-label={label}>
+          {options.map((option) => (
+            <li key={option.value}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={option.value === value}
+                className={option.value === value ? 'selected' : ''}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+              >
+                <span>{option.label}</span>
+                {option.value === value ? <Check size={14} /> : null}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }
@@ -1698,6 +2413,9 @@ async function apiFetch(path, options = {}) {
       body: '{}'
     });
     if (refreshResponse.ok) return apiFetch(path, { ...options, retried: true });
+    if (typeof window !== 'undefined' && !path.startsWith('/auth/')) {
+      window.dispatchEvent(new Event('envvault:session-expired'));
+    }
   }
 
   if (!response.ok) {
