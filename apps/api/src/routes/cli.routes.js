@@ -8,6 +8,7 @@ import {
   upsertUserFromGithubToken
 } from '../services/github-auth.service.js';
 import { logActivity } from '../services/activity.service.js';
+import { createEnvironmentVersion, serializeEnvironmentVersion } from '../services/environment-version.service.js';
 import { createSessionPair } from '../services/session.service.js';
 import { serializeDocument } from '../utils/http.js';
 
@@ -131,11 +132,18 @@ router.post(
       targetId: environment.id,
       metadata: { environment: environment.name, upserted: saved.length, deleted: deletedCount }
     });
+    const version = await createEnvironmentVersion({
+      environment,
+      actorId: req.user.sub,
+      source: 'cli:push',
+      metadata: { upserted: saved.length, deleted: deletedCount, replace: req.body.replace === true }
+    });
 
     res.json({
       environment: serializeDocument(environment),
       upserted: saved.length,
       deleted: deletedCount,
+      version: serializeEnvironmentVersion(version),
       variables: saved.map(serializeDocument)
     });
   })

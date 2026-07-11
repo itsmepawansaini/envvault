@@ -28,6 +28,18 @@ npm run cli -- status
 
 The API stores ciphertext only. Encryption and decryption live in clients through `@envvault/crypto-core`.
 
+## Version history API
+
+Environment snapshots are recorded after web variable changes, bulk imports, environment clones, restores, and CLI pushes. Snapshots store encrypted values only.
+
+```text
+GET  /api/environments/:id/versions
+GET  /api/environments/:id/versions/:versionId
+POST /api/environments/:id/versions/:versionId/restore
+```
+
+Restoring a production environment requires the same `x-envvault-production-confirm: production` header used by other production mutations.
+
 ## Test
 
 ```bash

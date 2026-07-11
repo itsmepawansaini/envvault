@@ -3,6 +3,7 @@ import { requireAuth } from '../middleware/auth.middleware.js';
 import { ApiError, asyncHandler } from '../middleware/error.middleware.js';
 import { Environment, Project, Variable } from '../models/index.js';
 import { logActivity } from '../services/activity.service.js';
+import { createEnvironmentVersion, serializeEnvironmentVersion } from '../services/environment-version.service.js';
 import { requireObjectId, serializeDocument } from '../utils/http.js';
 
 const router = Router();
@@ -28,8 +29,14 @@ router.patch(
       targetId: variable.id,
       metadata: { key: variable.key, environment: environment.name }
     });
+    const version = await createEnvironmentVersion({
+      environment,
+      actorId: req.user.sub,
+      source: 'web:update-variable',
+      metadata: { key: variable.key }
+    });
 
-    res.json({ variable: serializeDocument(variable) });
+    res.json({ variable: serializeDocument(variable), version: serializeEnvironmentVersion(version) });
   })
 );
 
@@ -47,6 +54,12 @@ router.delete(
       targetType: 'variable',
       targetId: variable.id,
       metadata: { key: variable.key, environment: environment.name }
+    });
+    await createEnvironmentVersion({
+      environment,
+      actorId: req.user.sub,
+      source: 'web:delete-variable',
+      metadata: { key: variable.key }
     });
 
     res.status(204).send();

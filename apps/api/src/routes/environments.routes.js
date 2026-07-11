@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import { ApiError, asyncHandler } from '../middleware/error.middleware.js';
-import { Environment, Project, Variable } from '../models/index.js';
+import { Environment, EnvironmentVersion, Project, Variable } from '../models/index.js';
 import { logActivity } from '../services/activity.service.js';
+import { createEnvironmentVersion, serializeEnvironmentVersion } from '../services/environment-version.service.js';
 import { requireObjectId, serializeDocument } from '../utils/http.js';
 
 const router = Router();
@@ -74,6 +75,12 @@ router.post(
         }))
       );
     }
+    const version = await createEnvironmentVersion({
+      environment: clone,
+      actorId: req.user.sub,
+      source: 'web:clone',
+      metadata: { clonedFrom: source.id, variableCount: variables.length }
+    });
 
     await logActivity({
       projectId: source.projectId,
@@ -84,7 +91,11 @@ router.post(
       metadata: { from: source.name, to: clone.name, variableCount: variables.length }
     });
 
-    res.status(201).json({ environment: serializeDocument(clone), clonedVariables: variables.length });
+    res.status(201).json({
+      environment: serializeDocument(clone),
+      clonedVariables: variables.length,
+      version: serializeEnvironmentVersion(version)
+    });
   })
 );
 
@@ -119,8 +130,14 @@ router.post(
       targetId: variable.id,
       metadata: { key: variable.key, environment: environment.name }
     });
+    const version = await createEnvironmentVersion({
+      environment,
+      actorId: req.user.sub,
+      source: 'web:create-variable',
+      metadata: { key: variable.key }
+    });
 
-    res.status(201).json({ variable: serializeDocument(variable) });
+    res.status(201).json({ variable: serializeDocument(variable), version: serializeEnvironmentVersion(version) });
   })
 );
 
@@ -166,10 +183,17 @@ router.post(
       targetId: environment.id,
       metadata: { environment: environment.name, created, updated, total: variables.length }
     });
+    const version = await createEnvironmentVersion({
+      environment,
+      actorId: req.user.sub,
+      source: 'web:bulk-import',
+      metadata: { created, updated, total: variables.length }
+    });
 
     const saved = await Variable.find({ environmentId: environment.id, key: { $in: keys } }).sort({ key: 1 });
     res.json({
       summary: { created, updated, total: variables.length },
+      version: serializeEnvironmentVersion(version),
       variables: saved.map(serializeDocument)
     });
   })
@@ -181,6 +205,84 @@ router.get(
     const environment = await requireEnvironmentAccess(req.params.id, req.user.sub);
     const variables = await Variable.find({ environmentId: environment.id }).sort({ key: 1 });
     res.json({ environment: serializeDocument(environment), variables: variables.map(serializeDocument) });
+  })
+);
+
+router.get(
+  '/:id/versions',
+  asyncHandler(async (req, res) => {
+    const environment = await requireEnvironmentAccess(req.params.id, req.user.sub);
+    const versions = await EnvironmentVersion.find({ environmentId: environment.id })
+      .sort({ version: -1 })
+      .limit(50);
+
+    res.json({
+      environment: serializeDocument(environment),
+      versions: versions.map((version) => serializeEnvironmentVersion(version))
+    });
+  })
+);
+
+router.get(
+  '/:id/versions/:versionId',
+  asyncHandler(async (req, res) => {
+    const environment = await requireEnvironmentAccess(req.params.id, req.user.sub);
+    const version = await requireEnvironmentVersion(environment.id, req.params.versionId);
+
+    res.json({
+      environment: serializeDocument(environment),
+      version: serializeEnvironmentVersion(version, { includeVariables: true })
+    });
+  })
+);
+
+router.post(
+  '/:id/versions/:versionId/restore',
+  asyncHandler(async (req, res) => {
+    const environment = await requireEnvironmentAccess(req.params.id, req.user.sub);
+    requireProductionConfirmation(req, environment);
+    const version = await requireEnvironmentVersion(environment.id, req.params.versionId);
+
+    await Variable.deleteMany({ environmentId: environment.id });
+    if (version.variables.length) {
+      await Variable.insertMany(
+        version.variables.map((variable) => ({
+          environmentId: environment.id,
+          key: variable.key,
+          encryptedValue: variable.encryptedValue,
+          iv: variable.iv,
+          valueDigest: variable.valueDigest || null,
+          updatedBy: req.user.sub
+        }))
+      );
+    }
+
+    const restoredVersion = await createEnvironmentVersion({
+      environment,
+      actorId: req.user.sub,
+      source: 'web:restore-version',
+      metadata: { restoredFromVersion: version.version, restoredFromId: version.id }
+    });
+    await logActivity({
+      projectId: environment.projectId,
+      actorId: req.user.sub,
+      action: 'environment.version.restored',
+      targetType: 'environment',
+      targetId: environment.id,
+      metadata: {
+        environment: environment.name,
+        restoredFromVersion: version.version,
+        restoredToVersion: restoredVersion.version,
+        variableCount: version.variables.length
+      }
+    });
+
+    res.json({
+      environment: serializeDocument(environment),
+      restoredFrom: serializeEnvironmentVersion(version),
+      version: serializeEnvironmentVersion(restoredVersion),
+      restoredVariables: version.variables.length
+    });
   })
 );
 
@@ -202,6 +304,15 @@ async function requireEnvironmentAccess(environmentId, userId) {
   }
 
   return environment;
+}
+
+async function requireEnvironmentVersion(environmentId, versionId) {
+  requireObjectId(versionId, 'version id');
+  const version = await EnvironmentVersion.findOne({ _id: versionId, environmentId });
+  if (!version) {
+    throw new ApiError(404, 'VERSION_NOT_FOUND', 'No environment version matches the given id.');
+  }
+  return version;
 }
 
 function requireProductionConfirmation(req, environment, nextName = '') {
